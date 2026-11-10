@@ -18,6 +18,9 @@ PHOTO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "docs", "
 # In the 1200 x 1200 photo: the display window and the device with a margin.
 SCREEN_BOX = (388, 362, 634, 500)
 CROP = (150, 300, 1050, 900)
+# Parts as white as the background that belong to the device: the USB-C
+# connector on the right edge.
+KEEP = [(990, 390, 1021, 472)]
 UPSCALE = 2
 
 
@@ -53,6 +56,9 @@ def main():
     mask = bg.point(lambda v: 0 if v else 255)
     mask = mask.filter(ImageFilter.MinFilter(7))                           # past the fringe
     mask = mask.filter(ImageFilter.GaussianBlur(3)).point(lambda v: 255 if v >= 128 else 0)  # smooth contour
+    cx, cy = CROP[0] * UPSCALE, CROP[1] * UPSCALE
+    for x0, y0, x1, y1 in KEEP:
+        mask.paste(255, (x0 * UPSCALE - cx, y0 * UPSCALE - cy, x1 * UPSCALE - cx, y1 * UPSCALE - cy))
     mask = mask.filter(ImageFilter.GaussianBlur(1.2))                      # soft edge
     out.putalpha(mask)
     size = (args.width, int(args.width * out.height / out.width))
