@@ -37,20 +37,26 @@ def main():
     shot = Image.alpha_composite(black, shot).resize((w, h), Image.LANCZOS)
     photo.paste(shot, (x0, y0))
     out = photo.crop(tuple(v * UPSCALE for v in CROP))
-    out = out.resize((args.width, int(args.width * out.height / out.width)), Image.LANCZOS)
-    # The photo sits on white: make the background around the device
-    # transparent (flood fill from the corners), so it works on dark pages.
+    # The photo sits on white: cut the device out at full resolution, so the
+    # edge is smooth after scaling down. Background = flood fill from the
+    # corners; the mask is then shrunk past the light fringe, its contour
+    # smoothed and its edge softened.
     rgb = out.convert("RGB")
     marker = (255, 0, 255)
     for corner in ((0, 0), (rgb.width - 1, 0), (0, rgb.height - 1), (rgb.width - 1, rgb.height - 1)):
-        ImageDraw.floodfill(rgb, corner, marker, thresh=18)
-    alpha = rgb.point(lambda _: 255).convert("L")
-    px, ap = rgb.load(), alpha.load()
-    for y in range(rgb.height):
-        for x in range(rgb.width):
-            if px[x, y] == marker:
-                ap[x, y] = 0
-    out.putalpha(alpha.filter(ImageFilter.GaussianBlur(0.7)))
+        ImageDraw.floodfill(rgb, corner, marker, thresh=40)
+    r, g, b = rgb.split()
+    is_bg = Image.merge("RGB", (r.point(lambda v: 255 if v == 255 else 0),
+                                g.point(lambda v: 255 if v == 0 else 0),
+                                b.point(lambda v: 255 if v == 255 else 0)))
+    bg = is_bg.convert("L").point(lambda v: 255 if v == 255 else 0)
+    mask = bg.point(lambda v: 0 if v else 255)
+    mask = mask.filter(ImageFilter.MinFilter(7))                           # past the fringe
+    mask = mask.filter(ImageFilter.GaussianBlur(3)).point(lambda v: 255 if v >= 128 else 0)  # smooth contour
+    mask = mask.filter(ImageFilter.GaussianBlur(1.2))                      # soft edge
+    out.putalpha(mask)
+    size = (args.width, int(args.width * out.height / out.width))
+    out = out.convert("RGBa").resize(size, Image.LANCZOS).convert("RGBA")  # premultiplied: no halo
     out.save(args.out, optimize=True)
     print("saved", args.out)
 
