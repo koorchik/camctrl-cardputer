@@ -201,6 +201,7 @@ esp_err_t sendPage(httpd_req_t* req, const Settings& form, const char* message, 
 
 esp_err_t handleRoot(httpd_req_t* req) {
     ++s_requests;
+    if (!hostOk(req)) return rejectCrossSite(req);  // DNS rebinding
     return sendPage(req, s_settings, nullptr, false);
 }
 
@@ -244,6 +245,7 @@ esp_err_t handleSave(httpd_req_t* req) {
 
 esp_err_t handleStatus(httpd_req_t* req) {
     ++s_requests;
+    if (!hostOk(req)) return rejectCrossSite(req);  // DNS rebinding
     BridgeStatus st;
     bridgeStatus(st);
     char cam[16], seen[16], ssid[SSID_MAX * 6 + 1], host[HOSTNAME_MAX * 6 + 1];
@@ -262,19 +264,21 @@ esp_err_t handleStatus(httpd_req_t* req) {
              "\"mdns\":\"%s\",\"mdns_name\":\"%s\",\"wifi_clients\":%d,\"ssid\":\"%s\","
              "\"channel\":%u,\"uptime_s\":%llu,\"frames\":{\"usb_to_wifi\":%lu,"
              "\"wifi_to_usb\":%lu,\"to_adapter\":%lu,\"from_adapter\":%lu,\"dropped\":%lu},"
-             "\"free_heap\":%lu,\"ota_pending\":%s}",
+             "\"free_heap\":%lu,\"min_free_heap\":%lu,\"ota_pending\":%s}",
              st.usbMounted ? "true" : "false", deviceIpForClients() ? cam : "",
              st.deviceSeenIp ? seen : "", mdns, host, st.wifiClients, ssid,
              (unsigned)s_settings.channel, (unsigned long long)(esp_timer_get_time() / 1000000),
              (unsigned long)st.usbToWifi, (unsigned long)st.wifiToUsb, (unsigned long)st.toLocal,
              (unsigned long)st.fromLocal, (unsigned long)st.drops,
-             (unsigned long)esp_get_free_heap_size(), webOtaPending() ? "true" : "false");
+             (unsigned long)esp_get_free_heap_size(),
+             (unsigned long)esp_get_minimum_free_heap_size(), webOtaPending() ? "true" : "false");
     httpd_resp_set_type(req, "application/json");
     return httpd_resp_sendstr(req, json);
 }
 
 esp_err_t handleLog(httpd_req_t* req) {
     ++s_requests;
+    if (!hostOk(req)) return rejectCrossSite(req);  // DNS rebinding
     char* buf = (char*)malloc(8200);
     if (!buf) return httpd_resp_send_500(req);
     const size_t n = logBufferRead(buf, 8200);
@@ -361,7 +365,7 @@ bool webOtaPending() {
 void webStart(const Settings& current) {
     s_settings = current;
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
-    cfg.stack_size = 8192;
+    cfg.stack_size = 6144;
     cfg.lru_purge_enable = true;
     cfg.max_open_sockets = 4;  // leaves lwIP sockets for DHCP and mDNS
     httpd_handle_t server = nullptr;

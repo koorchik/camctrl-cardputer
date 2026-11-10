@@ -18,6 +18,7 @@
 namespace {
 const char* TAG = "button";
 std::atomic<uint32_t> s_held{0};
+std::atomic<uint32_t> s_shortPresses{0};
 
 void task(void*) {
     const gpio_num_t pin = (gpio_num_t)BOARD_BUTTON_GPIO;
@@ -25,9 +26,14 @@ void task(void*) {
     gpio_set_direction(pin, GPIO_MODE_INPUT);
     gpio_set_pull_mode(pin, GPIO_PULLUP_ONLY);
     HoldDetector hold(FACTORY_RESET_HOLD_MS);
+    bool wasPressed = false;
+    uint32_t pressedAt = 0;
     while (true) {
         const uint32_t now = (uint32_t)(esp_timer_get_time() / 1000);
         const bool pressed = gpio_get_level(pin) == 0;
+        if (pressed && !wasPressed) pressedAt = now;
+        if (!pressed && wasPressed && now - pressedAt < SHORT_PRESS_MS) ++s_shortPresses;
+        wasPressed = pressed;
         if (hold.update(pressed, now)) {
             ESP_LOGW(TAG, "factory reset");
             settingsErase();
@@ -35,7 +41,7 @@ void task(void*) {
             esp_restart();
         }
         s_held = hold.heldMs(now);
-        vTaskDelay(pdMS_TO_TICKS(50));
+        vTaskDelay(pdMS_TO_TICKS(20));
     }
 }
 }  // namespace
@@ -46,4 +52,8 @@ void buttonStart() {
 
 uint32_t buttonHeldMs() {
     return s_held;
+}
+
+uint32_t buttonTakeShortPresses() {
+    return s_shortPresses.exchange(0);
 }
