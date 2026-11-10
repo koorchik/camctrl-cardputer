@@ -7,6 +7,7 @@
 
 RemoteKey remoteKeyFor(const Key& k) {
     if (k.code == KeyCode::Enter) return RemoteKey::Enter;
+    if (k.code == KeyCode::Backspace) return RemoteKey::Back;
     if (k.code != KeyCode::Char) return RemoteKey::None;
     switch (k.ch) {
         case ';': return RemoteKey::Up;      // printed arrow up
@@ -15,6 +16,7 @@ RemoteKey remoteKeyFor(const Key& k) {
         case '/': return RemoteKey::Right;   // printed arrow right
         case ' ': return RemoteKey::AutoFocus;
         case 'h': return RemoteKey::Help;
+        case '`': return RemoteKey::Back;  // printed esc
         case 'f': return RemoteKey::JumpFocus;
         case 'i': return RemoteKey::JumpIris;
         case 'o': return RemoteKey::JumpIso;
@@ -40,6 +42,7 @@ void RemoteModel::clampFeedDisplay(const CameraValues& v) {
 
 RemoteCommand RemoteModel::onKey(RemoteKey key, bool big, CameraValues& v) {
     RemoteCommand none;
+    limitHit_ = false;
     if (help_) {  // any key closes help
         if (key != RemoteKey::None) help_ = false;
         return none;
@@ -71,6 +74,24 @@ RemoteCommand RemoteModel::onKey(RemoteKey key, bool big, CameraValues& v) {
 }
 
 RemoteCommand RemoteModel::change(int dir, bool big, CameraValues& v) {
+    RemoteCommand c = changeValue(dir, big, v);
+    // A step that changes nothing at a known value is a range limit.
+    limitHit_ = c.type == RemoteCmd::None && row_ != RemoteRow::Feed && rowKnown(v);
+    return c;
+}
+
+bool RemoteModel::rowKnown(const CameraValues& v) const {
+    switch (row_) {
+        case RemoteRow::Focus: return v.focusKnown && v.focusControllable;
+        case RemoteRow::Iris: return v.irisKnown && v.irisControllable && !v.irisAuto;
+        case RemoteRow::Iso: return v.isoKnown && v.isoCount > 0;
+        case RemoteRow::Wb: return v.wbKnown;
+        case RemoteRow::Tint: return v.tintKnown;
+        default: return false;
+    }
+}
+
+RemoteCommand RemoteModel::changeValue(int dir, bool big, CameraValues& v) {
     RemoteCommand c;
     switch (row_) {
         case RemoteRow::Focus: {
@@ -84,7 +105,10 @@ RemoteCommand RemoteModel::change(int dir, bool big, CameraValues& v) {
             return c;
         }
         case RemoteRow::Iris: {
-            if (!v.irisKnown || !v.irisControllable || v.irisAuto) return c;
+            if (!v.irisKnown || !v.irisControllable || v.irisAuto || v.irisStop <= 0) return c;
+            // At the lens's own limits there is nothing to step to.
+            if (dir < 0 && v.irisMin > 0 && v.irisStop <= v.irisMin + 0.05f) return c;
+            if (dir > 0 && v.irisMax > 0 && v.irisStop >= v.irisMax - 0.05f) return c;
             // → closes the iris (bigger f-number), like the + button in the app.
             c.type = RemoteCmd::IrisStep;
             c.i = dir * (big ? IRIS_BIG_STEP : 1);

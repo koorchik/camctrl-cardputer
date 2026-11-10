@@ -35,7 +35,7 @@ struct RemoteCommand {
 
 // What the key means to the remote (after layout lookup).
 enum class RemoteKey : uint8_t {
-    None, Up, Down, Left, Right, Enter, AutoFocus, Help,
+    None, Up, Down, Left, Right, Enter, AutoFocus, Help, Back,
     JumpFocus, JumpIris, JumpIso, JumpWb, JumpTint, JumpFeed,
 };
 
@@ -57,6 +57,8 @@ public:
     RemoteRow row() const { return row_; }
     int feedDisplay() const { return feedDisplay_; }
     bool helpVisible() const { return help_; }
+    // True when the last Left/Right hit the end of the range (no command).
+    bool limitHit() const { return limitHit_; }
 
     // Applies one key. `big` = shift held or repeat boosted. Returns the
     // command to send (type None if nothing to send).
@@ -67,11 +69,14 @@ public:
 
 private:
     RemoteCommand change(int dir, bool big, CameraValues& v);
+    RemoteCommand changeValue(int dir, bool big, CameraValues& v);
+    bool rowKnown(const CameraValues& v) const;
     RemoteCommand rowAction(CameraValues& v);
 
     RemoteRow row_ = RemoteRow::Focus;
     int feedDisplay_ = 0;
     bool help_ = false;
+    bool limitHit_ = false;
 };
 
 // Display helpers (into `out`, NUL-terminated).

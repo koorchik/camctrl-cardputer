@@ -2,6 +2,7 @@
 // to the camera and bridges that link to its own Wi-Fi access point) plus a
 // camera remote on the Cardputer's screen and keyboard.
 
+#include <cstdlib>
 #include <cstring>
 
 #include "boot_mode.h"
@@ -23,6 +24,7 @@
 #include "logic/boot_guard.h"
 #include "logic/key_repeat.h"
 #include "logic/remote_model.h"
+#include "logic/ui_nav.h"
 #include "mdns_task.h"
 #include "net_config.h"
 #include "nvs_flash.h"
@@ -41,12 +43,11 @@ constexpr int64_t OTA_GIVE_UP_MS = 90000;
 // allocate frames: restart rather than sit there unreachable.
 constexpr size_t LOW_HEAP_BYTES = 12 * 1024;
 constexpr int64_t LOW_HEAP_MS = 20000;
-constexpr uint32_t TOAST_MS = 1500;
 // No USB host after this long: likely plugged into a camera with the
 // Cardputer's battery switch on (the camera then never starts its host).
 constexpr uint32_t POWER_HINT_AFTER_MS = 15000;
-constexpr uint32_t FRAME_MS = 20;
-constexpr uint32_t REDRAW_MS = 250;
+constexpr uint32_t FRAME_MS = 33;
+constexpr uint32_t REDRAW_MS = 500;
 
 void initNvs() {
     esp_err_t e = nvs_flash_init();
@@ -70,18 +71,36 @@ uint32_t nowMs() {
             bootModeMarkStable();
             esp_restart();
         }
-        uiRenderSafeMode((SAFE_MODE_TIMEOUT_MS - ms) / 1000, buttonHeldMs());
-        vTaskDelay(pdMS_TO_TICKS(200));
+        uiRenderSafeMode((SAFE_MODE_TIMEOUT_MS - ms) / 1000, SAFE_MODE_TIMEOUT_MS / 1000, buttonHeldMs());
+        vTaskDelay(pdMS_TO_TICKS(100));
     }
 }
 
-// Keyboard + G0 -> remote model -> camera commands.
-class Input {
-public:
-    explicit Input(QueueHandle_t keys) : keys_(keys) {}
+int isoIndex(const CameraValues& v) {
+    if (!v.isoCount) return -1;
+    size_t best = 0;
+    for (size_t i = 1; i < v.isoCount; ++i) {
+        if (abs(v.isoList[i] - v.iso) < abs(v.isoList[best] - v.iso)) best = i;
+    }
+    return (int)best;
+}
 
-    void poll(RemoteModel& model, char* toast, size_t toastCap, uint32_t& toastAt) {
-        const uint32_t now = nowMs();
+bool isModifier(const Key& k) {
+    return k.code == KeyCode::Shift || k.code == KeyCode::Fn || k.code == KeyCode::Ctrl ||
+           k.code == KeyCode::Opt || k.code == KeyCode::Alt;
+}
+
+// Keyboard + G0 -> screens (UiNav) -> remote model -> camera commands.
+class Remote {
+public:
+    Remote(QueueHandle_t keys, bool hintsSlim) : keys_(keys), hints_(hintsSlim) {}
+
+    UiNav& nav() { return nav_; }
+    RemoteModel& model() { return model_; }
+    HintTracker& hints() { return hints_; }
+    UiState& ui() { return ui_; }
+
+    void poll(uint32_t now, bool connected) {
         KeyEvent e;
         while (keys_ && xQueueReceive(keys_, &e, 0) == pdTRUE) {
             if (!e.pressed) {
@@ -89,9 +108,15 @@ public:
                 continue;
             }
             const RemoteKey rk = remoteKeyFor(e.key);
-            if (rk == RemoteKey::None) continue;
-            handle(model, rk, keyboardShiftHeld(), toast, toastCap, toastAt);
-            if (remoteKeyRepeats(rk)) {
+            if (rk == RemoteKey::None) {
+                if (!isModifier(e.key) && hints_.onUnmappedKey(now)) {
+                    cameraLocalNotice("PRESS h FOR KEYS", NoticeKind::Info);
+                }
+                continue;
+            }
+            key(rk, keyboardShiftHeld(), now, connected);
+            // Only adjusting keys repeat, and only while on a control view.
+            if (remoteKeyRepeats(rk) && nav_.view() != UiView::Help && nav_.view() != UiView::Intro) {
                 repeatKey_ = rk;
                 repeatRow_ = e.row;
                 repeatCol_ = e.col;
@@ -101,33 +126,87 @@ public:
             }
         }
         for (uint32_t n = repeater_.poll(now); n > 0; --n) {
-            handle(model, repeatKey_, keyboardShiftHeld() || repeater_.boosted(), toast, toastCap, toastAt);
+            key(repeatKey_, keyboardShiftHeld() || repeater_.boosted(), now, connected);
         }
-        for (uint32_t n = buttonTakeShortPresses(); n > 0; --n) {
-            handle(model, RemoteKey::AutoFocus, false, toast, toastCap, toastAt);
-        }
+        ui_.bigStep = keyboardShiftHeld() || (repeater_.held() && repeater_.boosted());
+        for (uint32_t n = buttonTakeShortPresses(); n > 0; --n) key(RemoteKey::AutoFocus, false, now, connected);
     }
 
+    bool keyHeld() const { return repeater_.held(); }
+
 private:
-    void handle(RemoteModel& model, RemoteKey key, bool big, char* toast, size_t cap, uint32_t& at) {
-        const RemoteCommand c = cameraHandleKey(model, key, big);
-        // Instant feedback for one-shot actions (the camera client confirms
-        // or reports a failure a moment later).
-        const char* text = nullptr;
-        if (c.type == RemoteCmd::AutoFocus) text = "AUTOFOCUS";
-        if (c.type == RemoteCmd::AutoWb) text = "AUTO WB";
-        if (c.type == RemoteCmd::SetCleanFeed) text = c.b ? "CLEAN FEED ON" : "CLEAN FEED OFF";
-        if (text) {
-            snprintf(toast, cap, "%s", text);
-            at = nowMs();
+    void key(RemoteKey k, bool big, uint32_t now, bool connected) {
+        ui_.pressedKey = k;
+        ui_.pressedAt = now;
+        const UiView before = nav_.view();
+        const RemoteRow rowBefore = model_.row();
+        const NavKeys nk = nav_.onKey(k, now, connected);
+        if (before == UiView::Help && nav_.view() == UiView::Intro) {
+            hints_.reset();  // replaying the intro brings the full hints back
+            settingsSetUiFlag("hslim", false);
+        }
+        for (int i = 0; i < nk.count; ++i) {
+            const RemoteKey mk = nk.keys[i];
+            CameraView cv;
+            cameraSnapshot(cv);
+            const RemoteCommand c = cameraHandleKey(model_, mk, big);
+            switch (c.type) {
+                case RemoteCmd::AutoFocus:
+                    cameraLocalNotice("AUTOFOCUS", NoticeKind::Info);
+                    hints_.onAutofocus();
+                    break;
+                case RemoteCmd::AutoWb:
+                    cameraLocalNotice("AUTO WHITE BALANCE", NoticeKind::Info);
+                    break;
+                case RemoteCmd::None:
+                    if (mk == RemoteKey::Left || mk == RemoteKey::Right) {
+                        if (model_.limitHit()) {
+                            ui_.limitHitAt = now;
+                        } else if (model_.row() == RemoteRow::Focus && !cv.shown.focusControllable) {
+                            ui_.unavailableAt = now;
+                            cameraLocalNotice("LENS NOT CONTROLLABLE", NoticeKind::Warn);
+                        } else if (model_.row() == RemoteRow::Iris && cv.shown.irisAuto) {
+                            ui_.unavailableAt = now;
+                            cameraLocalNotice("IRIS ON AUTO EXPOSURE", NoticeKind::Warn);
+                        } else if (model_.row() == RemoteRow::Iris && cv.shown.irisKnown &&
+                                   (!cv.shown.irisControllable || cv.shown.irisStop <= 0)) {
+                            ui_.unavailableAt = now;
+                            cameraLocalNotice("LENS NOT CONTROLLABLE", NoticeKind::Warn);
+                        }
+                    }
+                    break;
+                default:
+                    hints_.onConfirmedAdjust();
+                    break;
+            }
+            if (mk == RemoteKey::Up || mk == RemoteKey::Down ||
+                (mk >= RemoteKey::JumpFocus && mk <= RemoteKey::JumpFeed)) {
+                hints_.onNavigate();
+            }
+        }
+        // The EV chip counts from the ISO the detail view opened with.
+        if (nav_.view() == UiView::Detail && (before != UiView::Detail || model_.row() != rowBefore)) {
+            CameraView cv;
+            cameraSnapshot(cv);
+            ui_.isoIndexAtOpen = isoIndex(cv.shown);
+        }
+        if (hints_.takeGraduated()) settingsSetUiFlag("hslim", true);
+        if (nav_.introFinished() && !introSaved_) {
+            introSaved_ = true;
+            settingsSetUiFlag("intro", true);
         }
     }
 
     QueueHandle_t keys_;
+    RemoteModel model_;
+    UiNav nav_;
+    HintTracker hints_;
+    UiState ui_;
     KeyRepeater repeater_;
     RemoteKey repeatKey_ = RemoteKey::None;
     uint8_t repeatRow_ = 0xFF;
     uint8_t repeatCol_ = 0xFF;
+    bool introSaved_ = false;
 };
 }  // namespace
 
@@ -153,19 +232,21 @@ extern "C" void app_main(void) {
     mdnsTaskStart(settings.deviceHostname);
     webStart(settings);
     cameraClientStart();
-    Input input(keyboardStart());
+    QueueHandle_t keyboard = keyboardStart();
     ESP_LOGI(TAG, "heap after camera+keyboard: %lu free, %lu largest", (unsigned long)esp_get_free_heap_size(), (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
 
-    RemoteModel model;
-    UiState ui;
+    Remote remote(keyboard, settingsUiFlag("hslim"));
+    bool introSeen = settingsUiFlag("intro");
+    UiState& ui = remote.ui();
     UiState shown;
     bool everShown = false;
     snprintf(ui.ssid, sizeof(ui.ssid), "%s", settings.ssid);
     snprintf(ui.password, sizeof(ui.password), "%s", settings.password);
-    char localToast[24] = "";
-    uint32_t localToastAt = 0;
     uint32_t lastDraw = 0;
     uint32_t usbSeenAt = 0;
+    bool animating = false;
+    OpState afPrev = OpState::Idle;
+    uint32_t resetHeldPrev = 0;
     bool stable = false;
     bool otaConfirmed = false;
     int64_t lowHeapSince = 0;
@@ -200,47 +281,55 @@ extern "C" void app_main(void) {
             bootModeMarkStable();
             stable = true;
         }
-
         if (now - lastHeapLog >= 30000) {
             lastHeapLog = now;
             ESP_LOGI(TAG, "heap: %lu free, %lu min, %lu largest", (unsigned long)esp_get_free_heap_size(),
                      (unsigned long)esp_get_minimum_free_heap_size(),
                      (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
         }
-        input.poll(model, localToast, sizeof(localToast), localToastAt);
 
-        cameraSnapshot(ui.cam, ui.phase, ui.liveEvents);
-        model.clampFeedDisplay(ui.cam);
-        ui.row = model.row();
-        ui.feedDisplay = model.feedDisplay();
-        ui.help = model.helpVisible();
+        cameraSnapshot(ui.cam);
+        const bool connected = ui.cam.phase == CameraPhase::Connected;
+        if (connected && !introSeen) {  // first connection ever: the intro
+            introSeen = true;
+            remote.nav().startIntro();
+        }
+        remote.poll(now, connected);
+        cameraSnapshot(ui.cam);
+        if (afPrev == OpState::Running && (ui.cam.af == OpState::Done || ui.cam.af == OpState::Timeout)) {
+            remote.nav().onAutofocusDone(now);
+        }
+        afPrev = ui.cam.af;
+        const bool busy = remote.keyHeld() || ui.cam.af == OpState::Running || ui.cam.awb == OpState::Running ||
+                          ui.cam.irisQueued != 0;
+        remote.nav().tick(now, busy);
+        remote.model().clampFeedDisplay(ui.cam.shown);
+        ui.view = remote.nav().view();
+        ui.introCard = remote.nav().introCard();
+        ui.row = remote.model().row();
+        ui.feedDisplay = remote.model().feedDisplay();
+        ui.hintsSlim = remote.hints().slim();
 
         BridgeStatus bs;
         bridgeStatus(bs);
         ui.wifiClients = bs.wifiClients;
         if (bs.usbMounted) usbSeenAt = now;
-        ui.powerSwitchHint = ui.phase == CameraPhase::NoUsb && now - usbSeenAt >= POWER_HINT_AFTER_MS &&
+        ui.powerSwitchHint = ui.cam.phase == CameraPhase::NoUsb && now - usbSeenAt >= POWER_HINT_AFTER_MS &&
                              now >= POWER_HINT_AFTER_MS;
-
-        // Newest toast wins: a local action or a notice from the camera client.
-        char notice[24];
-        uint32_t noticeAt = 0;
-        cameraNotice(notice, sizeof(notice), noticeAt);
-        ui.toast[0] = '\0';
-        if (noticeAt && now - noticeAt < TOAST_MS && noticeAt >= localToastAt) {
-            snprintf(ui.toast, sizeof(ui.toast), "%s", notice);
-        } else if (localToastAt && now - localToastAt < TOAST_MS) {
-            snprintf(ui.toast, sizeof(ui.toast), "%s", localToast);
-        }
         ui.resetHeldMs = buttonHeldMs();
+        if (resetHeldPrev >= 1000 && ui.resetHeldMs == 0) cameraLocalNotice("RESET CANCELLED", NoticeKind::Warn);
+        resetHeldPrev = ui.resetHeldMs;
 
-        // Redraw on any change, and now and then regardless.
-        if (!everShown || memcmp(&ui, &shown, sizeof(ui)) != 0 || now - lastDraw >= REDRAW_MS) {
-            uiRender(ui);
+        // Draw on change, at ~30 fps while animating, and twice a second anyway.
+        ui.nowMs = shown.nowMs;
+        const bool changed = !everShown || memcmp(&ui, &shown, sizeof(ui)) != 0;
+        ui.nowMs = now;
+        if (changed || (animating && now - lastDraw >= FRAME_MS) || now - lastDraw >= REDRAW_MS) {
+            animating = uiRender(ui);
             shown = ui;
             everShown = true;
             lastDraw = now;
         }
-        vTaskDelay(pdMS_TO_TICKS(FRAME_MS));
+        vTaskDelay(pdMS_TO_TICKS(10));
     }
 }

@@ -43,6 +43,12 @@ struct CameraValues {
     int tintMin = -50;
     int tintMax = 50;
 
+    enum class Tally : uint8_t { None, Preview, Program };
+    bool tallyKnown = false;
+    Tally tally = Tally::None;
+    bool recordKnown = false;
+    bool recording = false;
+
     size_t displayCount = 0;
     char displays[CAM_MAX_DISPLAYS][CAM_DISPLAY_NAME_MAX + 1] = {};
     bool cleanFeedKnown[CAM_MAX_DISPLAYS] = {};

@@ -202,6 +202,34 @@ void test_formatting(void) {
     TEST_ASSERT_EQUAL_STRING("SDI", s);
 }
 
+void test_back_key_and_iris_limits(void) {
+    TEST_ASSERT_EQUAL(RemoteKey::Back, remoteKeyFor({KeyCode::Backspace, 0}));
+    TEST_ASSERT_EQUAL(RemoteKey::Back, remoteKeyFor({KeyCode::Char, '`'}));
+    RemoteModel m;
+    CameraValues v = camera();
+    m.onKey(RemoteKey::JumpIris, false, v);
+    v.irisStop = 1.42f;  // at the lens minimum (f/1.4)
+    TEST_ASSERT_EQUAL(RemoteCmd::None, m.onKey(RemoteKey::Left, false, v).type);
+    TEST_ASSERT_TRUE(m.limitHit());
+    TEST_ASSERT_EQUAL(RemoteCmd::IrisStep, m.onKey(RemoteKey::Right, false, v).type);
+    TEST_ASSERT_FALSE(m.limitHit());
+    v.irisStop = 16.0f;
+    TEST_ASSERT_EQUAL(RemoteCmd::None, m.onKey(RemoteKey::Right, false, v).type);
+    TEST_ASSERT_TRUE(m.limitHit());
+}
+
+void test_limit_hit_on_iso_end_but_not_when_unknown(void) {
+    RemoteModel m;
+    CameraValues v = camera();
+    m.onKey(RemoteKey::JumpIso, false, v);
+    v.iso = 3200;
+    m.onKey(RemoteKey::Right, false, v);
+    TEST_ASSERT_TRUE(m.limitHit());
+    CameraValues none;
+    m.onKey(RemoteKey::Right, false, none);
+    TEST_ASSERT_FALSE(m.limitHit());
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_key_mapping);
@@ -216,5 +244,7 @@ int main(int, char**) {
     RUN_TEST(test_help_swallows_next_key);
     RUN_TEST(test_unknown_values_send_nothing);
     RUN_TEST(test_formatting);
+    RUN_TEST(test_back_key_and_iris_limits);
+    RUN_TEST(test_limit_hit_on_iso_end_but_not_when_unknown);
     return UNITY_END();
 }

@@ -128,6 +128,21 @@ void test_encode_path_segment(void) {
     TEST_ASSERT_EQUAL_size_t(0, cameraEncodePathSegment("abcdef", out, 4));
 }
 
+void test_tally_and_record(void) {
+    CameraValues v;
+    TEST_ASSERT_TRUE(apply(v, "/camera/tallyStatus", "{\"status\":\"None\"}"));
+    TEST_ASSERT_TRUE(v.tallyKnown);
+    TEST_ASSERT_EQUAL(CameraValues::Tally::None, v.tally);
+    TEST_ASSERT_TRUE(apply(v, "/camera/tallyStatus", "{\"status\":\"Program\"}"));
+    TEST_ASSERT_EQUAL(CameraValues::Tally::Program, v.tally);
+    TEST_ASSERT_TRUE(apply(v, "/transports/0/record", "{\"recording\":true}"));
+    TEST_ASSERT_TRUE(v.recording);
+    char buf[512];
+    cameraSubscribeMessage(v, buf, sizeof(buf));
+    TEST_ASSERT_NOT_NULL(strstr(buf, "/camera/tallyStatus"));
+    TEST_ASSERT_NOT_NULL(strstr(buf, "/transports/0/record"));
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_lens);
@@ -139,5 +154,6 @@ int main(int, char**) {
     RUN_TEST(test_ws_messages);
     RUN_TEST(test_subscribe_message);
     RUN_TEST(test_encode_path_segment);
+    RUN_TEST(test_tally_and_record);
     return UNITY_END();
 }

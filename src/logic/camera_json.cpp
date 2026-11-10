@@ -20,7 +20,7 @@ const char* kCleanFeedSuffix = "/cleanFeed";
 const char* const kSubscribed[] = {
     "/lens/focus",         "/lens/focus/description", "/lens/iris",
     "/lens/iris/description", "/video/iso",         "/video/whiteBalance",
-    "/video/whiteBalanceTint",
+    "/video/whiteBalanceTint", "/camera/tallyStatus", "/transports/0/record",
 };
 
 bool getNumber(const cJSON* obj, const char* key, double& out) {
@@ -173,6 +173,24 @@ bool applyObject(CameraValues& v, const char* path, const cJSON* root) {
         if (getRange(root, "whiteBalanceTint", lo, hi)) {
             v.tintMin = (int)lo;
             v.tintMax = (int)hi;
+        }
+        return true;
+    }
+    if (strcmp(path, "/camera/tallyStatus") == 0) {
+        const cJSON* st = cJSON_GetObjectItemCaseSensitive(root, "status");
+        if (cJSON_IsString(st)) {
+            const char* s = st->valuestring;
+            v.tally = strcmp(s, "Program") == 0   ? CameraValues::Tally::Program
+                      : strcmp(s, "Preview") == 0 ? CameraValues::Tally::Preview
+                                                  : CameraValues::Tally::None;
+            v.tallyKnown = true;
+        }
+        return true;
+    }
+    if (strcmp(path, "/transports/0/record") == 0) {
+        if (getBool(root, "recording", b)) {
+            v.recording = b;
+            v.recordKnown = true;
         }
         return true;
     }

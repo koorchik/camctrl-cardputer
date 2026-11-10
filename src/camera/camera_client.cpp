@@ -28,13 +28,22 @@ constexpr uint32_t DESCRIPTION_POLL_MS = 10000; // iris range changes with zoom
 constexpr int MAX_FAILURES = 3;
 
 SemaphoreHandle_t s_lock = nullptr;
-CameraValues s_values;
+CameraValues s_values;   // shown (local changes applied)
+CameraValues s_actual;   // as reported by the camera
 CameraPhase s_phase = CameraPhase::NoUsb;
+OpState s_af = OpState::Idle;
+uint32_t s_afAt = 0;
+OpState s_awb = OpState::Idle;
+uint32_t s_awbAt = 0;
+int s_irisQueued = 0;
+uint32_t s_failedAt = 0;
+bool s_wasLive = false;
+NoticeKind s_noticeKind = NoticeKind::Info;
 QueueHandle_t s_cmdQueue = nullptr;
 esp_websocket_client_handle_t s_ws = nullptr;
 volatile bool s_wsLive = false;  // subscribed and receiving events
 
-char s_notice[24] = "";
+char s_notice[28] = "";
 uint32_t s_noticeMs = 0;
 
 // When the user last changed each value here (ms), so stale camera reports
@@ -52,10 +61,16 @@ bool held(uint32_t at, uint32_t now) {
     return at && now - at < LOCAL_HOLD_MS;
 }
 
-void notice(const char* text) {
-    xSemaphoreTake(s_lock, portMAX_DELAY);
+// Caller holds s_lock.
+void noticeLocked(const char* text, NoticeKind kind) {
     snprintf(s_notice, sizeof(s_notice), "%s", text);
+    s_noticeKind = kind;
     s_noticeMs = nowMs();
+}
+
+void notice(const char* text, NoticeKind kind) {
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    noticeLocked(text, kind);
     xSemaphoreGive(s_lock);
 }
 
@@ -65,7 +80,21 @@ template <typename Fn>
 void applyKeepingLocal(Fn apply) {
     const uint32_t now = nowMs();
     const CameraValues before = s_values;
+    const CameraValues actualBefore = s_actual;
+    apply(s_actual);
     apply(s_values);
+    // Autofocus is done when the camera reports focus a moment after the
+    // command; auto WB when it reports a white balance.
+    if (s_af == OpState::Running && now - s_afAt >= 300 &&
+        (s_actual.focus != actualBefore.focus || !actualBefore.focusKnown)) {
+        s_af = OpState::Done;
+        s_afAt = now;
+    }
+    if (s_awb == OpState::Running && now - s_awbAt >= 200 && s_actual.wb != actualBefore.wb) {
+        s_awb = OpState::Done;
+        s_awbAt = now;
+    }
+    if (s_actual.irisStop != actualBefore.irisStop && s_irisQueued != 0) s_irisQueued = 0;
     if (held(s_holds.focus, now)) s_values.focus = before.focus;
     if (held(s_holds.iso, now)) s_values.iso = before.iso;
     if (held(s_holds.wb, now)) s_values.wb = before.wb;
@@ -75,6 +104,51 @@ void applyKeepingLocal(Fn apply) {
             strcmp(before.displays[i], s_values.displays[i]) == 0) {
             s_values.cleanFeed[i] = before.cleanFeed[i];
         }
+    }
+}
+
+// Once a local change is no longer held, show what the camera has. This
+// also undoes optimistic values the camera never took. Caller holds s_lock.
+void reconcileLocked(uint32_t now) {
+    if (s_holds.focus && !held(s_holds.focus, now)) {
+        s_holds.focus = 0;
+        s_values.focus = s_actual.focus;
+    }
+    if (s_holds.iso && !held(s_holds.iso, now)) {
+        s_holds.iso = 0;
+        s_values.iso = s_actual.iso;
+    }
+    if (s_holds.wb && !held(s_holds.wb, now)) {
+        s_holds.wb = 0;
+        s_values.wb = s_actual.wb;
+    }
+    if (s_holds.tint && !held(s_holds.tint, now)) {
+        s_holds.tint = 0;
+        s_values.tint = s_actual.tint;
+    }
+    for (size_t i = 0; i < CAM_MAX_DISPLAYS; ++i) {
+        if (s_holds.feed[i] && !held(s_holds.feed[i], now)) {
+            s_holds.feed[i] = 0;
+            if (i < s_actual.displayCount && s_actual.cleanFeedKnown[i]) {
+                s_values.cleanFeed[i] = s_actual.cleanFeed[i];
+            }
+        }
+    }
+    if (s_af == OpState::Running && now - s_afAt >= 2000) {
+        s_af = OpState::Timeout;
+        s_afAt = now;
+    }
+    if ((s_af == OpState::Done || s_af == OpState::Timeout) && now - s_afAt >= 1500) {
+        s_af = OpState::Idle;
+        s_afAt = now;
+    }
+    if (s_awb == OpState::Running && now - s_awbAt >= 3000) {
+        s_awb = OpState::Idle;
+        s_awbAt = now;
+    }
+    if (s_awb == OpState::Done && now - s_awbAt >= 1500) {
+        s_awb = OpState::Idle;
+        s_awbAt = now;
     }
 }
 
@@ -175,7 +249,14 @@ bool put(const char* path, const char* json) {
     const bool ok = status == 200 || status == 204;
     if (!ok) {
         ESP_LOGW(TAG, "PUT %s -> %d %s", path, status, s_http.body().buf);
-        notice(status == 403 ? "NOT ALLOWED NOW" : "WRITE FAILED");
+        xSemaphoreTake(s_lock, portMAX_DELAY);
+        noticeLocked(status == 403 ? "NOT ALLOWED (403)" : (status < 0 ? "NO REPLY FROM CAMERA" : "WRITE FAILED"),
+                     NoticeKind::Error);
+        s_failedAt = nowMs();
+        // Show the camera's value again right away.
+        s_holds = Holds();
+        reconcileLocked(nowMs());
+        xSemaphoreGive(s_lock);
     }
     return ok;
 }
@@ -199,6 +280,8 @@ void fetchCleanFeeds() {
 }
 
 void pollValues() {
+    getAndApply("/camera/tallyStatus");
+    getAndApply("/transports/0/record");
     getAndApply("/lens/focus");
     getAndApply("/lens/iris");
     getAndApply("/video/iso");
@@ -341,9 +424,17 @@ void sendPending(Pending& p, Timers& t) {
     char json[96];
     if (p.autoFocus) {
         p.autoFocus = false;
-        notice("AUTOFOCUS");
-        put("/lens/focus/doAutoFocus", "{\"position\":{\"x\":0.5,\"y\":0.5}}");
-        t.refocusAt = now + 700;
+        xSemaphoreTake(s_lock, portMAX_DELAY);
+        s_af = OpState::Running;
+        s_afAt = now;
+        xSemaphoreGive(s_lock);
+        if (put("/lens/focus/doAutoFocus", "{\"position\":{\"x\":0.5,\"y\":0.5}}")) {
+            t.refocusAt = now + 700;
+        } else {
+            xSemaphoreTake(s_lock, portMAX_DELAY);
+            s_af = OpState::Idle;
+            xSemaphoreGive(s_lock);
+        }
     }
     if (p.focus && now - t.lastFocus >= FOCUS_INTERVAL_MS) {
         p.focus = false;
@@ -356,6 +447,9 @@ void sendPending(Pending& p, Timers& t) {
         steps = steps > 127 ? 127 : (steps < -128 ? -128 : steps);
         p.irisSteps -= steps;
         snprintf(json, sizeof(json), "{\"adjustmentStep\":%d}", steps);
+        xSemaphoreTake(s_lock, portMAX_DELAY);
+        s_irisQueued = steps + p.irisSteps;
+        xSemaphoreGive(s_lock);
         put("/lens/iris", json);
         t.irisBusyUntil = now + IRIS_SETTLE_MS;
         t.reirisAt = now + IRIS_SETTLE_MS;
@@ -367,9 +461,17 @@ void sendPending(Pending& p, Timers& t) {
     }
     if (p.autoWb) {
         p.autoWb = false;
-        notice("AUTO WB");
-        put("/video/whiteBalance/doAuto", "{}");
-        t.rewbAt = now + 500;
+        xSemaphoreTake(s_lock, portMAX_DELAY);
+        s_awb = OpState::Running;
+        s_awbAt = now;
+        xSemaphoreGive(s_lock);
+        if (put("/video/whiteBalance/doAuto", "{}")) {
+            t.rewbAt = now + 500;
+        } else {
+            xSemaphoreTake(s_lock, portMAX_DELAY);
+            s_awb = OpState::Idle;
+            xSemaphoreGive(s_lock);
+        }
     }
     if (p.wb) {
         p.wb = false;
@@ -422,7 +524,11 @@ void setPhase(CameraPhase phase) {
     xSemaphoreTake(s_lock, portMAX_DELAY);
     if (s_phase != phase) ESP_LOGI(TAG, "phase %d -> %d", (int)s_phase, (int)phase);
     s_phase = phase;
-    if (phase != CameraPhase::Connected) s_values.connected = false;
+    if (phase != CameraPhase::Connected) {
+        s_values.connected = false;
+        s_actual.connected = false;
+        s_wasLive = false;
+    }
     xSemaphoreGive(s_lock);
 }
 
@@ -466,6 +572,11 @@ void task(void*) {
             s_failures = 0;
             xSemaphoreTake(s_lock, portMAX_DELAY);
             s_values = CameraValues();
+            s_actual = CameraValues();
+            s_holds = Holds();
+            s_af = s_awb = OpState::Idle;
+            s_irisQueued = 0;
+            s_wasLive = false;
             xSemaphoreGive(s_lock);
             if (!fetchAll()) {
                 s_http.close();
@@ -475,6 +586,7 @@ void task(void*) {
             connectedIp = ip;
             xSemaphoreTake(s_lock, portMAX_DELAY);
             s_values.connected = true;
+            s_actual.connected = true;
             s_phase = CameraPhase::Connected;
             ESP_LOGI(TAG, "connected to %s", s_values.name);
             xSemaphoreGive(s_lock);
@@ -487,6 +599,18 @@ void task(void*) {
         if (pendingWork(pending) || timers.refocusAt || timers.rewbAt || timers.reirisAt) {
             sendPending(pending, timers);
         }
+        xSemaphoreTake(s_lock, portMAX_DELAY);
+        reconcileLocked(nowMs());
+        if (s_irisQueued != 0 && !pending.irisSteps && (int32_t)(nowMs() - timers.irisBusyUntil) >= 2000) {
+            s_irisQueued = 0;  // the camera never reported a change (e.g. at a limit)
+        }
+        const bool live = s_wsLive;
+        if (live != s_wasLive) {
+            if (!live) noticeLocked("LIVE LINK LOST - POLLING", NoticeKind::Warn);
+            if (live && s_actual.connected) noticeLocked("LIVE LINK RESTORED", NoticeKind::Ok);
+            s_wasLive = live;
+        }
+        xSemaphoreGive(s_lock);
         if (!s_wsLive && now - lastPoll >= POLL_MS) {
             lastPoll = now;
             pollValues();
@@ -514,12 +638,26 @@ void cameraClientStart() {
     xTaskCreate(task, "camera", 6144, nullptr, 5, nullptr);
 }
 
-void cameraSnapshot(CameraValues& out, CameraPhase& phase, bool& liveEvents) {
+void cameraSnapshot(CameraView& out) {
     xSemaphoreTake(s_lock, portMAX_DELAY);
-    out = s_values;
-    phase = s_phase;
+    out.shown = s_values;
+    out.actual = s_actual;
+    out.phase = s_phase;
+    out.af = s_af;
+    out.afAt = s_afAt;
+    out.awb = s_awb;
+    out.awbAt = s_awbAt;
+    out.irisQueued = s_irisQueued;
+    snprintf(out.notice, sizeof(out.notice), "%s", s_notice);
+    out.noticeKind = s_noticeKind;
+    out.noticeAt = s_noticeMs;
+    out.failedAt = s_failedAt;
     xSemaphoreGive(s_lock);
-    liveEvents = s_wsLive;
+    out.live = s_wsLive;
+}
+
+void cameraLocalNotice(const char* text, NoticeKind kind) {
+    notice(text, kind);
 }
 
 RemoteCommand cameraHandleKey(RemoteModel& model, RemoteKey key, bool big) {
@@ -537,14 +675,9 @@ RemoteCommand cameraHandleKey(RemoteModel& model, RemoteKey key, bool big) {
         default: break;
     }
     const bool connected = s_phase == CameraPhase::Connected;
+    const bool afBusy = s_af == OpState::Running;
     xSemaphoreGive(s_lock);
+    if (c.type == RemoteCmd::AutoFocus && afBusy) return RemoteCommand();  // one at a time
     if (c.type != RemoteCmd::None && connected) xQueueSend(s_cmdQueue, &c, 0);
     return c;
-}
-
-void cameraNotice(char* out, size_t cap, uint32_t& atMs) {
-    xSemaphoreTake(s_lock, portMAX_DELAY);
-    snprintf(out, cap, "%s", s_notice);
-    atMs = s_noticeMs;
-    xSemaphoreGive(s_lock);
 }

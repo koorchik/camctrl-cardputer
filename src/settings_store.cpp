@@ -61,6 +61,24 @@ const char* settingsSave(const Settings& s) {
     return e == ESP_OK ? nullptr : "Could not save settings";
 }
 
+bool settingsUiFlag(const char* key) {
+    nvs_handle_t h;
+    uint8_t v = 0;
+    if (nvs_open(NS, NVS_READONLY, &h) == ESP_OK) {
+        nvs_get_u8(h, key, &v);
+        nvs_close(h);
+    }
+    return v != 0;
+}
+
+void settingsSetUiFlag(const char* key, bool value) {
+    nvs_handle_t h;
+    if (nvs_open(NS, NVS_READWRITE, &h) != ESP_OK) return;
+    nvs_set_u8(h, key, value ? 1 : 0);
+    nvs_commit(h);
+    nvs_close(h);
+}
+
 void settingsErase() {
     nvs_handle_t h;
     if (nvs_open(NS, NVS_READWRITE, &h) == ESP_OK) {
