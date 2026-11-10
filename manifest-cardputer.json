@@ -1,0 +1,8 @@
+{
+  "name": "CamCtrl Cardputer (cardputer)",
+  "version": "1.0.0",
+  "new_install_prompt_erase": true,
+  "builds": [
+    {"chipFamily": "ESP32-S3", "parts": [{"path": "firmware/camctrl-cardputer-cardputer-v1.0.0-full.bin", "offset": 0}]}
+  ]
+}
