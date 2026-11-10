@@ -1311,7 +1311,7 @@ void drawConnection(const UiState& s) {
         s_c->setFont(F0);
         s_c->setTextDatum(textdatum_t::top_left);
         s_c->setTextColor(TEXT);
-        s_c->drawString("- Cardputer power switch OFF", 14, 88);
+        s_c->drawString("- CARDPUTER's own switch: OFF", 14, 88);
         s_c->drawString("- Data cable, firmly plugged in", 14, 99);
         s_c->setTextColor(TEXT_2);
         s_c->drawString("- then unplug and replug it", 14, 110);
