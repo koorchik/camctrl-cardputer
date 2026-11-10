@@ -54,6 +54,9 @@ Product/protocol decisions: `docs/superpowers/specs/2026-11-10-camctrl-cardputer
   did, plus bigger stacks/buffers, left the bridge unable to allocate frames — the board joined
   Wi‑Fi but answered nothing, and needed a power cycle (rollback). Keep free heap ≥ ~40 KB at
   runtime; check `/api/log` heap lines after any change that allocates.
+- **Main task stack** is 10240 bytes and big objects (`Remote`, `UiState`, JSON scratch) are
+  `static`: a 3.5 KB default stack overflowed and two crashes put the board in safe mode. The boot
+  guard counts crashes per firmware image, so a reflash clears the count.
 - M5GFX is configured explicitly (`CardputerDisplay` in `ui.cpp`); no M5Unified, no autodetect
   (it would probe the I2C bus the keyboard driver owns). GPIO38 = backlight *and* RGB‑LED power:
   never drive it low.

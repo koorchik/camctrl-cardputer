@@ -52,7 +52,7 @@ struct UsbFrame {
     void* buf;
     uint16_t len;
 };
-constexpr int USB_TX_QUEUE_LEN = 32;
+constexpr int USB_TX_QUEUE_LEN = 16;
 QueueHandle_t s_usbTxQueue = nullptr;
 
 // Without VBUS sensing a pulled cable looks like a bus suspend, so "mounted

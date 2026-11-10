@@ -114,9 +114,12 @@ public:
                 }
                 continue;
             }
+            const UiView viewBefore = nav_.view();
             key(rk, keyboardShiftHeld(), now, connected);
-            // Only adjusting keys repeat, and only while on a control view.
-            if (remoteKeyRepeats(rk) && nav_.view() != UiView::Help && nav_.view() != UiView::Intro) {
+            // Only adjusting keys repeat, and only on a control view (a key
+            // that closed help or the intro must not start adjusting).
+            if (remoteKeyRepeats(rk) && viewBefore != UiView::Help && viewBefore != UiView::Intro &&
+                nav_.view() != UiView::Help && nav_.view() != UiView::Intro) {
                 repeatKey_ = rk;
                 repeatRow_ = e.row;
                 repeatCol_ = e.col;
@@ -235,10 +238,11 @@ extern "C" void app_main(void) {
     QueueHandle_t keyboard = keyboardStart();
     ESP_LOGI(TAG, "heap after camera+keyboard: %lu free, %lu largest", (unsigned long)esp_get_free_heap_size(), (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
 
-    Remote remote(keyboard, settingsUiFlag("hslim"));
+    // Large objects live outside the main task's stack.
+    static Remote remote(keyboard, settingsUiFlag("hslim"));
     bool introSeen = settingsUiFlag("intro");
     UiState& ui = remote.ui();
-    UiState shown;
+    static UiState shown;
     bool everShown = false;
     snprintf(ui.ssid, sizeof(ui.ssid), "%s", settings.ssid);
     snprintf(ui.password, sizeof(ui.password), "%s", settings.password);
@@ -267,7 +271,10 @@ extern "C" void app_main(void) {
             vTaskDelay(pdMS_TO_TICKS(200));
             esp_restart();
         }
-        if (esp_get_free_heap_size() < LOW_HEAP_BYTES) {
+        // Total free heap can look fine while it is too fragmented to
+        // allocate a frame, so the largest block counts too.
+        if (esp_get_free_heap_size() < LOW_HEAP_BYTES ||
+            heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) < 4096) {
             if (!lowHeapSince) lowHeapSince = now ? now : 1;
             if ((int64_t)now - lowHeapSince >= LOW_HEAP_MS) {
                 ESP_LOGE(TAG, "free heap stayed below %u bytes; restarting", (unsigned)LOW_HEAP_BYTES);

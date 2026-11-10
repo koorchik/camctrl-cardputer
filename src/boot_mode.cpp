@@ -1,8 +1,11 @@
 #include "boot_mode.h"
 
+#include <cstring>
+
 #include "esp_private/periph_ctrl.h"
 #include "hal/usb_serial_jtag_ll.h"
 #include "hal/usb_wrap_ll.h"
+#include "esp_app_desc.h"
 #include "esp_attr.h"
 #include "esp_log.h"
 #include "esp_system.h"
@@ -75,7 +78,9 @@ void bootModeReconnectSerialJtag() {
 }
 
 bool bootModeIsSafe() {
-    s_safe = bootGuardOnBoot(s_guard, resetKind());
+    uint32_t firmwareId = 0;
+    if (const esp_app_desc_t* d = esp_app_get_description()) memcpy(&firmwareId, d->app_elf_sha256, sizeof(firmwareId));
+    s_safe = bootGuardOnBoot(s_guard, resetKind(), firmwareId);
     ESP_LOGI(TAG, "reset reason %d, crashes %lu -> %s", (int)esp_reset_reason(),
              (unsigned long)s_guard.crashCount, s_safe ? "SAFE MODE" : "normal");
     if (s_safe) {

@@ -79,10 +79,14 @@ void notice(const char* text, NoticeKind kind) {
 template <typename Fn>
 void applyKeepingLocal(Fn apply) {
     const uint32_t now = nowMs();
-    const CameraValues before = s_values;
-    const CameraValues actualBefore = s_actual;
+    // Parse once into the camera's values; the shown values follow them
+    // except for fields the user changed a moment ago.
+    static CameraValues before;
+    static CameraValues actualBefore;
+    before = s_values;
+    actualBefore = s_actual;
     apply(s_actual);
-    apply(s_values);
+    s_values = s_actual;
     // Autofocus is done when the camera reports focus a moment after the
     // command; auto WB when it reports a white balance.
     if (s_af == OpState::Running && now - s_afAt >= 300 &&
@@ -99,6 +103,7 @@ void applyKeepingLocal(Fn apply) {
     if (held(s_holds.iso, now)) s_values.iso = before.iso;
     if (held(s_holds.wb, now)) s_values.wb = before.wb;
     if (held(s_holds.tint, now)) s_values.tint = before.tint;
+    if (!s_actual.connected) s_values.connected = before.connected;
     for (size_t i = 0; i < CAM_MAX_DISPLAYS; ++i) {
         if (held(s_holds.feed[i], now) && i < s_values.displayCount &&
             strcmp(before.displays[i], s_values.displays[i]) == 0) {
@@ -280,13 +285,15 @@ void fetchCleanFeeds() {
 }
 
 void pollValues() {
-    getAndApply("/camera/tallyStatus");
-    getAndApply("/transports/0/record");
-    getAndApply("/lens/focus");
-    getAndApply("/lens/iris");
-    getAndApply("/video/iso");
-    getAndApply("/video/whiteBalance");
-    getAndApply("/video/whiteBalanceTint");
+    // Stop at the first transport error so an absent camera does not keep
+    // the task busy for 2.5 s per request.
+    const char* paths[] = {"/lens/focus", "/lens/iris", "/video/iso", "/video/whiteBalance",
+                           "/video/whiteBalanceTint", "/camera/tallyStatus", "/transports/0/record"};
+    const int failuresBefore = s_failures;
+    for (const char* p : paths) {
+        getAndApply(p);
+        if (s_failures > failuresBefore) return;
+    }
     fetchCleanFeeds();
 }
 
@@ -319,7 +326,9 @@ void wsEvent(void*, esp_event_base_t, int32_t id, void* data) {
             break;
         case WEBSOCKET_EVENT_DATA: {
             if (d->op_code != 0x1 && d->op_code != 0x0) break;  // text / continuation
-            if (d->payload_offset == 0) s_wsLen = 0;
+            // payload_offset counts within one frame; a new message starts
+            // with a text frame at offset 0 (continuation frames append).
+            if (d->op_code == 0x1 && d->payload_offset == 0) s_wsLen = 0;
             if (s_wsLen + d->data_len >= sizeof(s_wsBuf)) {
                 s_wsLen = sizeof(s_wsBuf);  // too big: drop this message
                 break;
@@ -329,13 +338,13 @@ void wsEvent(void*, esp_event_base_t, int32_t id, void* data) {
             if (d->payload_offset + d->data_len < d->payload_len) break;  // more fragments
             if (s_wsLen >= sizeof(s_wsBuf)) break;
             CameraWsKind kind = CameraWsKind::Other;
-            CameraValues snapshot;
+            static CameraValues snapshot;  // websocket task only; keeps its stack small
             xSemaphoreTake(s_lock, portMAX_DELAY);
             applyKeepingLocal([&](CameraValues& v) { kind = cameraApplyWsMessage(v, s_wsBuf, s_wsLen); });
             snapshot = s_values;
             xSemaphoreGive(s_lock);
             if (kind == CameraWsKind::Opened) {
-                char sub[768];
+                static char sub[768];
                 const size_t n = cameraSubscribeMessage(snapshot, sub, sizeof(sub));
                 if (n && esp_websocket_client_send_text(s_ws, sub, (int)n, pdMS_TO_TICKS(1000)) > 0) {
                     s_wsLive = true;
@@ -367,12 +376,12 @@ void wsStart(uint32_t ip) {
 }
 
 void wsStop() {
-    s_wsLive = false;
     if (s_ws) {
         esp_websocket_client_stop(s_ws);
         esp_websocket_client_destroy(s_ws);
         s_ws = nullptr;
     }
+    s_wsLive = false;  // after destroy: the handler cannot set it again
 }
 
 // --- commands ---------------------------------------------------------------
@@ -432,7 +441,8 @@ void sendPending(Pending& p, Timers& t) {
             t.refocusAt = now + 700;
         } else {
             xSemaphoreTake(s_lock, portMAX_DELAY);
-            s_af = OpState::Idle;
+            s_af = OpState::Timeout;
+            s_afAt = nowMs();
             xSemaphoreGive(s_lock);
         }
     }

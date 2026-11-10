@@ -16,12 +16,15 @@ struct BootGuardState {
     uint32_t magic;
     uint32_t crashCount;
     uint32_t safeRequested;
+    uint32_t firmwareId;  // which image counted the crashes
 };
 
 // Updates `st` for this boot and returns true if this boot is in safe mode.
 // Power-on resets clear everything; crashes count up; a safe-mode request
 // (made before a software reset) is honoured once.
-bool bootGuardOnBoot(BootGuardState& st, ResetKind reset);
+// `firmwareId` identifies the running image: crashes counted by another
+// image (i.e. before a reflash) do not count against this one.
+bool bootGuardOnBoot(BootGuardState& st, ResetKind reset, uint32_t firmwareId);
 
 // Call once the firmware has been running for BOOT_GUARD_STABLE_MS.
 void bootGuardMarkStable(BootGuardState& st);
