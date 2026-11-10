@@ -64,13 +64,13 @@ Chrome or Edge on a computer and follow the steps there.
 
 Download `camctrl-cardputer-cardputer-vX.Y.Z-full.bin` from the
 [latest release](https://github.com/koorchik/camctrl-cardputer/releases/latest). Put the Cardputer
-into download mode (power switch off, hold **G0**, switch on, release), then:
+into download mode (unplug it, power switch OFF, hold **G0** while plugging the USB cable in), then:
 
 ```bash
 esptool.py --chip esp32s3 write_flash 0x0 camctrl-cardputer-cardputer-v1.0.0-full.bin
 ```
 
-Switch it off and on again afterwards.
+Unplug the cable and plug it in again afterwards.
 
 ### M5Burner
 
