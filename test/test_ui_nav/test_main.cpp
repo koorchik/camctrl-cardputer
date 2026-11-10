@@ -89,9 +89,26 @@ void test_help_from_anywhere_any_key_closes_enter_starts_intro(void) {
     TEST_ASSERT_EQUAL(UiView::Overview, n.view());
     TEST_ASSERT_EQUAL(0, k.count);  // closing key is not executed
     n.onKey(RemoteKey::Help, 2, true);
+    n.onKey(RemoteKey::Help, 2, true);  // the Wi-Fi page offers the intro
     n.onKey(RemoteKey::Enter, 3, true);
     TEST_ASSERT_EQUAL(UiView::Intro, n.view());
     TEST_ASSERT_EQUAL(0, n.introCard());
+}
+
+void test_help_h_flips_pages(void) {
+    UiNav n;
+    n.onKey(RemoteKey::Help, 0, true);
+    TEST_ASSERT_EQUAL(0, n.helpPage());
+    n.onKey(RemoteKey::Help, 1, true);
+    TEST_ASSERT_EQUAL(UiView::Help, n.view());
+    TEST_ASSERT_EQUAL(1, n.helpPage());
+    n.onKey(RemoteKey::Help, 2, true);
+    TEST_ASSERT_EQUAL(0, n.helpPage());
+    n.onKey(RemoteKey::Help, 3, true);
+    n.onKey(RemoteKey::Back, 4, true);  // closes
+    TEST_ASSERT_EQUAL(UiView::Overview, n.view());
+    n.onKey(RemoteKey::Help, 5, true);  // opens on the first page again
+    TEST_ASSERT_EQUAL(0, n.helpPage());
 }
 
 void test_intro_cards(void) {
@@ -155,6 +172,7 @@ int main(int, char**) {
     RUN_TEST(test_space_selects_focus_and_runs_af);
     RUN_TEST(test_jump_opens_detail_back_closes);
     RUN_TEST(test_help_from_anywhere_any_key_closes_enter_starts_intro);
+    RUN_TEST(test_help_h_flips_pages);
     RUN_TEST(test_intro_cards);
     RUN_TEST(test_intro_autofocus_runs_and_advances_when_done);
     RUN_TEST(test_no_camera_ignores_control_keys);

@@ -19,7 +19,9 @@ NavKeys UiNav::onKey(RemoteKey k, uint32_t nowMs, bool connected) {
     lastKeyMs_ = nowMs;
 
     if (view_ == UiView::Help) {
-        if (k == RemoteKey::Enter) {
+        if (k == RemoteKey::Help) {
+            helpPage_ ^= 1;
+        } else if (k == RemoteKey::Enter && helpPage_ == 1) {  // "Enter: replay intro"
             startIntro();
         } else {
             view_ = UiView::Overview;
@@ -28,6 +30,7 @@ NavKeys UiNav::onKey(RemoteKey k, uint32_t nowMs, bool connected) {
     }
     if (k == RemoteKey::Help) {
         view_ = UiView::Help;
+        helpPage_ = 0;
         return out;
     }
     if (view_ == UiView::Intro) {

@@ -17,6 +17,12 @@ built-in fonts into the single 240 x 135 x 16 bpp sprite that is already allocat
 >   subscribed) sits left of the LIVE dot: percentage, a 15 x 8 battery icon with a level bar
 >   (`OK`, `WARN` ≤ 30 %, `ERR` ≤ 15 %, `INFO` while charging), a bolt while charging; the
 >   source name (`AC`, `USB`) when no battery is present. The camera name is clipped before it.
+> - **No bottom key strip** (unreadable at 6 px). The status bar is 18 px with Font2 text (REC /
+>   tally chips, name, battery, live dot, phones, an `h` key cap); everything below is drawn 5 px
+>   lower than the coordinates in this document (`CONTENT_SHIFT`). Help (`h`) is the place for
+>   keys: two pages in Font2 (keys; Wi-Fi + jump letters), `h` flips pages, Enter on the Wi-Fi
+>   page replays the intro, any other key closes. "Not controllable" messages use the bottom
+>   15 px of a detail view in Font2.
 
 All coordinates are absolute screen pixels, origin top-left, `x` 0..239, `y` 0..134. A rectangle
 `(x, y, w, h)` covers `x..x+w-1`, `y..y+h-1`. "Baseline (x, y)" means `textdatum_t::baseline_left`

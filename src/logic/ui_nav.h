@@ -29,6 +29,8 @@ class UiNav {
 public:
     UiView view() const { return view_; }
     int introCard() const { return introCard_; }
+    // Help has two pages (keys, Wi-Fi); h flips between them.
+    int helpPage() const { return helpPage_; }
     // Set once the intro was closed by the user (persist it).
     bool introFinished() const { return introFinished_; }
 
@@ -47,6 +49,7 @@ public:
 private:
     UiView view_ = UiView::Overview;
     int introCard_ = 0;
+    int helpPage_ = 0;
     bool introFinished_ = false;
     uint32_t lastKeyMs_ = 0;
     uint32_t introAdvanceAt_ = 0;

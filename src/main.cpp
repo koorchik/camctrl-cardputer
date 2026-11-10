@@ -316,6 +316,7 @@ extern "C" void app_main(void) {
         remote.model().clampFeedDisplay(ui.cam.shown);
         ui.view = remote.nav().view();
         ui.introCard = remote.nav().introCard();
+        ui.helpPage = remote.nav().helpPage();
         ui.row = remote.model().row();
         ui.feedDisplay = remote.model().feedDisplay();
         ui.hintsSlim = remote.hints().slim();

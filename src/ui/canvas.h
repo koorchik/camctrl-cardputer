@@ -9,8 +9,17 @@
 class Canvas {
 public:
     explicit Canvas(LGFX_Sprite* s) : s_(s) {}
-    void setBand(int top) { oy_ = top; }
-    int bandTop() const { return oy_; }
+    void setBand(int top) {
+        top_ = top;
+        oy_ = top_ - dy_;
+    }
+    // Moves everything drawn afterwards down by `dy` pixels (the content
+    // area below the status bar).
+    void setShift(int dy) {
+        dy_ = dy;
+        oy_ = top_ - dy_;
+    }
+    int bandTop() const { return top_; }
     LGFX_Sprite* sprite() { return s_; }
 
     void fillScreen(uint16_t c) { s_->fillScreen(c); }
@@ -48,5 +57,7 @@ public:
 
 private:
     LGFX_Sprite* s_;
+    int top_ = 0;
+    int dy_ = 0;
     int oy_ = 0;
 };

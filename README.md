@@ -35,11 +35,11 @@ camera ──USB (NCM)──> [Cardputer: bridge + remote UI] <──Wi-Fi──
 | Enter (control open) | focus: AF · WB: auto white balance · feed: toggle the selected output |
 | `f` `i` `o` `w` `t` `c` | jump to focus, iris, ISO, WB, tint, clean feed |
 | Del / `` ` `` | back to the overview (also by itself after 3 s idle) |
-| `h` | all keys + Wi‑Fi details (Enter there replays the intro) |
+| `h` | all keys; `h` again: Wi‑Fi details (Enter there replays the intro) |
 | G0 held 5 s | factory reset (a countdown appears after 1 s; release to cancel) |
 
-The bottom bar always shows the keys that work on the current screen; it slims down once you
-have used the remote a bit (press an unknown key twice to get the full hints back).
+The screen has no key strip: press `h` for the keys (a second `h` shows the Wi‑Fi details). An
+unknown key pressed twice reminds you of `h`.
 
 ### Screens
 

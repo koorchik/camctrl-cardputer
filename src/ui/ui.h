@@ -18,6 +18,7 @@ struct UiState {
     RemoteRow row = RemoteRow::Focus;
     int feedDisplay = 0;
     int introCard = 0;
+    int helpPage = 0;
     bool hintsSlim = false;
     bool bigStep = false;          // shift held or repeat boosted
     int isoIndexAtOpen = -1;       // for the EV chip
