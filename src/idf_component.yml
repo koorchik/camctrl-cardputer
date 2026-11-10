@@ -1,0 +1,6 @@
+dependencies:
+  espressif/esp_tinyusb: "*"
+  espressif/esp_websocket_client: "*"
+  espressif/cjson: "*"
+  m5stack/m5gfx: ">=0.2.35"
+  idf: ">=5.4"
