@@ -302,7 +302,7 @@ bool fetchAll() {
     const char* paths[] = {
         "/lens/focus/description", "/lens/iris/description", "/video/supportedISOs",
         "/video/whiteBalance/description", "/video/whiteBalanceTint/description",
-        "/monitoring/display",
+        "/monitoring/display", "/camera/power",
     };
     for (const char* p : paths) getAndApply(p);
     pollValues();
@@ -629,6 +629,8 @@ void task(void*) {
             lastDescription = now;
             getAndApply("/lens/iris/description");
             if (!s_wsLive) getAndApply("/lens/focus/description");
+            // Battery level changes slowly and may not come as an event.
+            getAndApply("/camera/power");
         }
         if (s_failures >= MAX_FAILURES) {
             ESP_LOGW(TAG, "camera stopped answering; reconnecting");

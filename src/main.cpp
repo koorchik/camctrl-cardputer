@@ -131,7 +131,10 @@ public:
         for (uint32_t n = repeater_.poll(now); n > 0; --n) {
             key(repeatKey_, keyboardShiftHeld() || repeater_.boosted(), now, connected);
         }
-        ui_.bigStep = keyboardShiftHeld() || (repeater_.held() && repeater_.boosted());
+        // Up/Down held in a detail view are big steps too (the hint lights up).
+        const bool upDownHeld = repeater_.held() && nav_.view() == UiView::Detail &&
+                                (repeatKey_ == RemoteKey::Up || repeatKey_ == RemoteKey::Down);
+        ui_.bigStep = keyboardShiftHeld() || (repeater_.held() && repeater_.boosted()) || upDownHeld;
         for (uint32_t n = buttonTakeShortPresses(); n > 0; --n) key(RemoteKey::AutoFocus, false, now, connected);
     }
 
@@ -152,7 +155,7 @@ private:
             const RemoteKey mk = nk.keys[i];
             CameraView cv;
             cameraSnapshot(cv);
-            const RemoteCommand c = cameraHandleKey(model_, mk, big);
+            const RemoteCommand c = cameraHandleKey(model_, mk, big || nk.big);
             switch (c.type) {
                 case RemoteCmd::AutoFocus:
                     cameraLocalNotice("AUTOFOCUS", NoticeKind::Info);
@@ -182,8 +185,8 @@ private:
                     hints_.onConfirmedAdjust();
                     break;
             }
-            if (mk == RemoteKey::Up || mk == RemoteKey::Down ||
-                (mk >= RemoteKey::JumpFocus && mk <= RemoteKey::JumpFeed)) {
+            if (mk == RemoteKey::Up || mk == RemoteKey::Down || mk == RemoteKey::ColLeft ||
+                mk == RemoteKey::ColRight || (mk >= RemoteKey::JumpFocus && mk <= RemoteKey::JumpFeed)) {
                 hints_.onNavigate();
             }
         }

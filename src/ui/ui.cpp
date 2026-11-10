@@ -298,7 +298,7 @@ struct HintCap {
     RemoteKey key;
 };
 struct Hint {
-    HintCap caps[2];
+    HintCap caps[4];
     int capCount;
     const char* word;
 };
@@ -312,6 +312,7 @@ constexpr HintCap CAP_ENT = {"ENT", Arrow::None, RemoteKey::Enter};
 constexpr HintCap CAP_SHIFT = {"SHIFT", Arrow::None, RemoteKey::None};
 constexpr HintCap CAP_H = {"h", Arrow::None, RemoteKey::Help};
 constexpr HintCap CAP_G0 = {"G0", Arrow::None, RemoteKey::None};
+constexpr HintCap CAP_DEL = {"DEL", Arrow::None, RemoteKey::Back};
 
 void drawHintBar(const UiState& s, const Hint* hints, int n) {
     s_c->fillRect(0, 121, W, 14, STATUS_BG);
@@ -325,7 +326,9 @@ void drawHintBar(const UiState& s, const Hint* hints, int n) {
                 st = CapStyle::Pressed;
                 A.active = true;
             }
-            if (cap.key == RemoteKey::None && s.bigStep && strcmp(cap.legend, "SHIFT") == 0) st = CapStyle::Pressed;
+            if (s.bigStep && s.view == UiView::Detail && (cap.key == RemoteKey::Up || cap.key == RemoteKey::Down)) {
+                st = CapStyle::Pressed;
+            }
             x += drawKeycap(x, 121, cap.legend, cap.arrow, st) + 2;
         }
         // Slim hints keep only the contextual word (the last item).
@@ -357,6 +360,44 @@ void shortCameraName(const char* name, char* out, size_t cap) {
     snprintf(out, cap, "%s", tmp);
 }
 
+// Camera power, right-aligned at xRight: battery icon with level and
+// percentage, a bolt while charging, or the source name without a battery.
+// Returns the left x (xRight when nothing is known).
+int drawCameraPower(const CameraValues& v, int xRight) {
+    if (!v.powerKnown) return xRight;
+    s_c->setFont(F0);
+    s_c->setTextDatum(textdatum_t::top_right);
+    if (!v.batteryPresent) {
+        const char* src = v.powerSource == CameraValues::PowerSource::Ac    ? "AC"
+                          : v.powerSource == CameraValues::PowerSource::Usb ? "USB"
+                          : v.powerSource == CameraValues::PowerSource::Battery ? "BATT"
+                                                                                : "DC";
+        s_c->setTextColor(TEXT_2);
+        return xRight - s_c->drawString(src, xRight, 3);
+    }
+    // Icon: 15 x 8 body plus a 2 x 4 nub on the right.
+    const int bx = xRight - 17, by = 3;
+    const int pct = v.batteryPercent < 0 ? -1 : (v.batteryPercent > 100 ? 100 : v.batteryPercent);
+    const uint16_t level = v.batteryCharging ? INFO : (pct >= 0 && pct <= 15 ? ERR : (pct >= 0 && pct <= 30 ? WARN : OK));
+    s_c->drawRect(bx, by, 15, 8, TEXT_2);
+    s_c->fillRect(bx + 15, by + 2, 2, 4, TEXT_2);
+    if (pct >= 0) s_c->fillRect(bx + 2, by + 2, (11 * pct + 50) / 100, 4, level);
+    int x = bx - 2;
+    if (v.batteryCharging) {
+        // Small lightning bolt.
+        s_c->fillTriangle(x - 1, 2, x - 5, 7, x - 2, 7, INFO);
+        s_c->fillTriangle(x - 3, 6, x, 6, x - 4, 12, INFO);
+        x -= 7;
+    }
+    if (pct >= 0) {
+        char t[8];
+        snprintf(t, sizeof(t), "%d%%", pct);
+        s_c->setTextColor(pct <= 15 && !v.batteryCharging ? ERR : TEXT_2);
+        x -= s_c->drawString(t, x, 3);
+    }
+    return x;
+}
+
 void drawStatusBar(const UiState& s, bool camera) {
     s_c->fillRect(0, 0, W, 14, STATUS_BG);
     s_c->setFont(F0);
@@ -377,18 +418,7 @@ void drawStatusBar(const UiState& s, bool camera) {
         s_c->drawString(pgm ? "PGM" : "PVW", x + 3, 3);
         x += 27;
     }
-    char name[CAM_NAME_MAX + 1];
-    if (camera) {
-        shortCameraName(s.cam.shown.name, name, sizeof(name));
-    } else {
-        snprintf(name, sizeof(name), "CamCtrl");
-    }
-    s_c->setTextDatum(textdatum_t::top_left);
-    s_c->setTextColor(camera ? TEXT_2 : TEXT);
-    s_c->setClipRect(0, 0, 150, 14);
-    s_c->drawString(name, x + 1, 3);
-    s_c->clearClipRect();
-
+    // Right side first: the camera name gets what is left.
     int rx = 225;
     drawKeycap(rx, 1, "h", Arrow::None, CapStyle::Dim);
     rx -= 4;
@@ -411,7 +441,22 @@ void drawStatusBar(const UiState& s, bool camera) {
         s_c->drawString(live ? "LIVE" : "POLL", rx, 3);
         rx -= 28;
         if (live || blink(s.nowMs, 500)) s_c->fillCircle(rx + 2, 7, 3, live ? OK : WARN);
+        rx -= 6;
+        rx = drawCameraPower(s.cam.actual, rx);
     }
+
+    char name[CAM_NAME_MAX + 1];
+    if (camera) {
+        shortCameraName(s.cam.shown.name, name, sizeof(name));
+    } else {
+        snprintf(name, sizeof(name), "CamCtrl");
+    }
+    s_c->setTextDatum(textdatum_t::top_left);
+    s_c->setTextColor(camera ? TEXT_2 : TEXT);
+    s_c->setFont(F0);
+    s_c->setClipRect(0, 0, rx - 4, 14);
+    s_c->drawString(name, x + 1, 3);
+    s_c->clearClipRect();
 }
 
 void drawBanner(const UiState& s) {
@@ -637,14 +682,11 @@ void overviewHints(const UiState& s) {
                                                   : "LENS NOT CONTROLLABLE");
         return;
     }
-    Hint h[3] = {
-        {{CAP_UP, CAP_DOWN}, 2, "pick"},
-        {{CAP_LEFT, CAP_RIGHT}, 2, s.row == RemoteRow::Feed ? "output" : "adjust"},
-        {{CAP_H}, 1, "all keys"},
+    const Hint h[3] = {
+        {{CAP_UP, CAP_DOWN, CAP_LEFT, CAP_RIGHT}, 4, "pick"},
+        {{CAP_ENT}, 1, "open"},
+        {{CAP_SPC}, 1, "AF"},
     };
-    if (s.row == RemoteRow::Focus) h[2] = {{CAP_SPC}, 1, "AF"};
-    if (s.row == RemoteRow::Wb) h[2] = {{CAP_ENT}, 1, "auto WB"};
-    if (s.row == RemoteRow::Feed) h[2] = {{CAP_ENT}, 1, "on/off"};
     drawHintBar(s, h, 3);
 }
 
@@ -789,9 +831,9 @@ void drawFocusDetail(const UiState& s, float dt) {
         return;
     }
     const Hint h[4] = {{{CAP_LEFT, CAP_RIGHT}, 2, "focus"},
-                       {{CAP_SHIFT}, 1, "x10"},
+                       {{CAP_UP, CAP_DOWN}, 2, "x10"},
                        {{CAP_SPC}, 1, "AF"},
-                       {{CAP_UP, CAP_DOWN}, 2, ""}};
+                       {{CAP_DEL}, 1, ""}};
     drawHintBar(s, h, 4);
 }
 
@@ -893,7 +935,7 @@ void drawIrisDetail(const UiState& s, float dt) {
         drawHintMessage("LENS NOT CONTROLLABLE");
         return;
     }
-    const Hint h[4] = {{{CAP_LEFT}, 1, "open"}, {{CAP_RIGHT}, 1, "close"}, {{CAP_SHIFT}, 1, "x3"}, {{CAP_UP, CAP_DOWN}, 2, ""}};
+    const Hint h[4] = {{{CAP_LEFT}, 1, "open"}, {{CAP_RIGHT}, 1, "close"}, {{CAP_UP, CAP_DOWN}, 2, "x3"}, {{CAP_DEL}, 1, ""}};
     drawHintBar(s, h, 4);
 }
 
@@ -980,7 +1022,7 @@ void drawIsoDetail(const UiState& s, float dt) {
         const int mx = n > 1 ? 12 + (int)(A.isoIdxDisp * 216 / (n - 1)) : 120;
         markerDown(mx, 99, ACCENT);
     }
-    const Hint h[3] = {{{CAP_LEFT, CAP_RIGHT}, 2, "ISO"}, {{CAP_SHIFT}, 1, "1 stop"}, {{CAP_UP, CAP_DOWN}, 2, "back"}};
+    const Hint h[3] = {{{CAP_LEFT, CAP_RIGHT}, 2, "ISO"}, {{CAP_UP, CAP_DOWN}, 2, "1 stop"}, {{CAP_DEL}, 1, "back"}};
     drawHintBar(s, h, 3);
 }
 
@@ -1096,7 +1138,7 @@ void drawWbDetail(const UiState& s, float dt) {
     s_c->drawString("G", 12, 110);
     s_c->drawString("M", 224, 110);
 
-    const Hint h[3] = {{{CAP_LEFT, CAP_RIGHT}, 2, "kelvin"}, {{CAP_SHIFT}, 1, "500"}, {{CAP_ENT}, 1, "auto WB"}};
+    const Hint h[3] = {{{CAP_LEFT, CAP_RIGHT}, 2, "kelvin"}, {{CAP_UP, CAP_DOWN}, 2, "500"}, {{CAP_ENT}, 1, "auto WB"}};
     drawHintBar(s, h, 3);
 }
 
@@ -1169,8 +1211,8 @@ void drawTintDetail(const UiState& s, float dt) {
     drawLutBar(kelvinLut, 10, 114, 220, 4, 0.5f);
     if (v.wbKnown) s_c->fillRect(10 + (v.wb - 2500) * 219 / 7500, 113, 2, 6, TEXT);
 
-    const Hint h[3] = {{{CAP_LEFT}, 1, "green"}, {{CAP_RIGHT}, 1, "magenta"}, {{CAP_SHIFT}, 1, "x10"}};
-    drawHintBar(s, h, 3);
+    const Hint h[4] = {{{CAP_LEFT}, 1, "green"}, {{CAP_RIGHT}, 1, "magenta"}, {{CAP_UP, CAP_DOWN}, 2, "x10"}, {{CAP_DEL}, 1, ""}};
+    drawHintBar(s, h, 4);
 }
 
 // A tiny picture of you on a monitor, with OSD bars when clean feed is off.
@@ -1244,8 +1286,8 @@ void drawFeedDetail(const UiState& s, float dt) {
     const int sx = (int)lroundf(A.feedSelX);
     s_c->drawRoundRect(sx, 32, tw, 86, 4, ACCENT);
     s_c->drawRoundRect(sx + 1, 33, tw - 2, 84, 4, ACCENT);
-    const Hint h[2] = {{{CAP_LEFT, CAP_RIGHT}, 2, "output"}, {{CAP_ENT}, 1, "clean feed on/off"}};
-    drawHintBar(s, h, 2);
+    const Hint h[3] = {{{CAP_LEFT, CAP_RIGHT}, 2, "output"}, {{CAP_ENT}, 1, "on/off"}, {{CAP_DEL}, 1, "back"}};
+    drawHintBar(s, h, 3);
 }
 
 // --- connection, help, intro, overlays ---------------------------------------
@@ -1346,16 +1388,16 @@ void drawHelp(const UiState& s) {
     s_c->setTextColor(TEXT_2);
     s_c->drawString("any key: close", 236, 3);
     struct Row {
-        HintCap caps[2];
+        HintCap caps[4];
         int n;
         const char* text;
     };
     const Row rows[] = {
-        {{CAP_UP, CAP_DOWN}, 2, "choose control"},
-        {{CAP_LEFT, CAP_RIGHT}, 2, "change value, hold = fast"},
-        {{CAP_SHIFT}, 1, "+ change = big step"},
+        {{CAP_UP, CAP_DOWN, CAP_LEFT, CAP_RIGHT}, 4, "pick a control"},
+        {{CAP_ENT}, 1, "open; then AF/WB/feed"},
+        {{CAP_LEFT, CAP_RIGHT}, 2, "open: change, hold=fast"},
+        {{CAP_UP, CAP_DOWN}, 2, "open: big step (SHIFT)"},
         {{CAP_SPC, CAP_G0}, 2, "AUTOFOCUS"},
-        {{CAP_ENT}, 1, "AF / auto WB / feed on-off"},
     };
     int y = 17;
     for (const Row& r : rows) {
@@ -1364,7 +1406,7 @@ void drawHelp(const UiState& s) {
         s_c->setFont(F0);
         s_c->setTextDatum(textdatum_t::top_left);
         s_c->setTextColor(strcmp(r.text, "AUTOFOCUS") == 0 ? INFO : TEXT);
-        s_c->drawString(r.text, 84, y + 2);
+        s_c->drawString(r.text, x > 84 ? x + 4 : 84, y + 2);
         y += 14;
     }
     int x = 6;
@@ -1471,17 +1513,25 @@ void drawIntro(const UiState& s) {
         s_c->setTextColor(TEXT);
         drawArrow(118, 25, Arrow::Up, ACCENT);
         drawArrow(125, 25, Arrow::Down, ACCENT);
-        s_c->drawString("choose a control", 134, 24);
-        drawArrow(118, 39, Arrow::Left, ACCENT);
-        drawArrow(125, 39, Arrow::Right, ACCENT);
-        s_c->drawString("change it", 134, 38);
-        s_c->setTextColor(TEXT_2);
-        s_c->drawString("hold = fast, SHIFT = big", 118, 52);
-        int x = 118 + drawKeycap(118, 66, "ENT", Arrow::None, CapStyle::Normal) + 3;
+        drawArrow(132, 25, Arrow::Left, ACCENT);
+        drawArrow(139, 25, Arrow::Right, ACCENT);
+        s_c->drawString("pick a control", 148, 24);
+        int x = 118 + drawKeycap(118, 37, "ENT", Arrow::None, CapStyle::Normal) + 3;
         s_c->setFont(F0);
         s_c->setTextDatum(textdatum_t::top_left);
         s_c->setTextColor(TEXT);
-        s_c->drawString("AF/auto WB/feed", x, 68);
+        s_c->drawString("open it", x, 39);
+        drawArrow(118, 54, Arrow::Left, ACCENT);
+        drawArrow(125, 54, Arrow::Right, ACCENT);
+        s_c->drawString("change", 134, 53);
+        drawArrow(176, 54, Arrow::Up, ACCENT);
+        drawArrow(183, 54, Arrow::Down, ACCENT);
+        s_c->drawString("big", 192, 53);
+        x = 118 + drawKeycap(118, 66, "DEL", Arrow::None, CapStyle::Normal) + 3;
+        s_c->setFont(F0);
+        s_c->setTextDatum(textdatum_t::top_left);
+        s_c->setTextColor(TEXT);
+        s_c->drawString("back to all", x, 68);
         x = 118 + drawKeycap(118, 82, "f", Arrow::None, CapStyle::Normal) + 2;
         x += drawKeycap(x, 82, "i", Arrow::None, CapStyle::Normal) + 2;
         x += drawKeycap(x, 82, "o", Arrow::None, CapStyle::Normal) + 3;

@@ -5,6 +5,19 @@ M5GFX full-screen sprite). It replaces the "Screen" section of
 `2026-11-10-camctrl-cardputer-design.md`. Everything here is drawable with M5GFX primitives and
 built-in fonts into the single 240 x 135 x 16 bpp sprite that is already allocated in `ui.cpp`.
 
+> **Revision (2026-11-10, after the first hands-on test).** The overview is navigated as a grid,
+> which supersedes the key bindings, hint bars, help rows and intro card 2 drawn below:
+> - Overview: `;` `.` move within a column, `,` `/` switch columns (edges stop, no wrap); Enter
+>   opens the selected control. Arrows no longer change values on the overview.
+>   Hint bar: `[;^][.v][,<][/>] pick  [ENT] open  [SPC] AF`.
+> - Detail (control open): `,` `/` change, `;` `.` big step (the Shift step), Enter = the
+>   control's action (AF / auto WB / feed toggle), Del or `` ` `` back, 3 s idle closes. The
+>   `[SHIFT]` hint caps are replaced by `[;^][.v]` and the trailing `[;^][.v]` by `[DEL]`.
+> - Status bar: the camera's battery from `/camera/power` (polled on connect and every 10 s, also
+>   subscribed) sits left of the LIVE dot: percentage, a 15 x 8 battery icon with a level bar
+>   (`OK`, `WARN` ≤ 30 %, `ERR` ≤ 15 %, `INFO` while charging), a bolt while charging; the
+>   source name (`AC`, `USB`) when no battery is present. The camera name is clipped before it.
+
 All coordinates are absolute screen pixels, origin top-left, `x` 0..239, `y` 0..134. A rectangle
 `(x, y, w, h)` covers `x..x+w-1`, `y..y+h-1`. "Baseline (x, y)" means `textdatum_t::baseline_left`
 (or `baseline_right` / `baseline_center` where stated).

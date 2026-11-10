@@ -5,8 +5,10 @@
 #include "logic/remote_model.h"
 
 // Which screen the remote shows and how keys move between screens (pure
-// logic). The overview shows all six controls; a detail view shows one
-// control big while it is being adjusted and closes after a short idle.
+// logic). The overview shows all six controls in a 2 x 3 grid; the arrows
+// move the selection and Enter opens the control's detail view. There
+// Left/Right adjust, Up/Down adjust in big steps, Enter is the control's
+// action, Back (or a short idle) returns to the overview.
 
 enum class UiView : uint8_t { Overview, Detail, Help, Intro };
 
@@ -17,6 +19,7 @@ constexpr uint32_t INTRO_AF_ADVANCE_MS = 800;
 struct NavKeys {
     RemoteKey keys[2] = {RemoteKey::None, RemoteKey::None};
     int count = 0;
+    bool big = false;  // apply as a big step (Up/Down in a detail view)
     void add(RemoteKey k) {
         if (count < 2) keys[count++] = k;
     }

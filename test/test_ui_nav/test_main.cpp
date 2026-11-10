@@ -5,25 +5,53 @@
 void setUp(void) {}
 void tearDown(void) {}
 
-void test_arrows_open_detail_and_apply(void) {
+void test_overview_arrows_move_over_the_grid(void) {
     UiNav n;
     NavKeys k = n.onKey(RemoteKey::Right, 100, true);
+    TEST_ASSERT_EQUAL(UiView::Overview, n.view());
+    TEST_ASSERT_EQUAL(1, k.count);
+    TEST_ASSERT_EQUAL(RemoteKey::ColRight, k.keys[0]);
+    k = n.onKey(RemoteKey::Left, 110, true);
+    TEST_ASSERT_EQUAL(RemoteKey::ColLeft, k.keys[0]);
+    k = n.onKey(RemoteKey::Down, 120, true);
+    TEST_ASSERT_EQUAL(UiView::Overview, n.view());
+    TEST_ASSERT_EQUAL(RemoteKey::Down, k.keys[0]);
+    TEST_ASSERT_FALSE(k.big);
+}
+
+void test_enter_opens_detail_without_acting(void) {
+    UiNav n;
+    NavKeys k = n.onKey(RemoteKey::Enter, 0, true);
+    TEST_ASSERT_EQUAL(UiView::Detail, n.view());
+    TEST_ASSERT_EQUAL(0, k.count);
+    // Inside, Enter is the control's action (AF, auto WB, feed on/off).
+    k = n.onKey(RemoteKey::Enter, 10, true);
+    TEST_ASSERT_EQUAL(UiView::Detail, n.view());
+    TEST_ASSERT_EQUAL(1, k.count);
+    TEST_ASSERT_EQUAL(RemoteKey::Enter, k.keys[0]);
+}
+
+void test_detail_left_right_adjust_up_down_big_steps(void) {
+    UiNav n;
+    n.onKey(RemoteKey::Enter, 0, true);
+    NavKeys k = n.onKey(RemoteKey::Right, 10, true);
+    TEST_ASSERT_EQUAL(RemoteKey::Right, k.keys[0]);
+    TEST_ASSERT_FALSE(k.big);
+    k = n.onKey(RemoteKey::Up, 20, true);
     TEST_ASSERT_EQUAL(UiView::Detail, n.view());
     TEST_ASSERT_EQUAL(1, k.count);
     TEST_ASSERT_EQUAL(RemoteKey::Right, k.keys[0]);
-}
-
-void test_up_down_close_detail_and_move(void) {
-    UiNav n;
-    n.onKey(RemoteKey::Left, 0, true);
-    NavKeys k = n.onKey(RemoteKey::Down, 10, true);
+    TEST_ASSERT_TRUE(k.big);
+    k = n.onKey(RemoteKey::Down, 30, true);
+    TEST_ASSERT_EQUAL(RemoteKey::Left, k.keys[0]);
+    TEST_ASSERT_TRUE(k.big);
+    n.onKey(RemoteKey::Back, 40, true);
     TEST_ASSERT_EQUAL(UiView::Overview, n.view());
-    TEST_ASSERT_EQUAL(RemoteKey::Down, k.keys[0]);
 }
 
 void test_detail_closes_after_idle_unless_busy(void) {
     UiNav n;
-    n.onKey(RemoteKey::Right, 1000, true);
+    n.onKey(RemoteKey::Enter, 1000, true);
     n.tick(1000 + DETAIL_IDLE_CLOSE_MS - 1, false);
     TEST_ASSERT_EQUAL(UiView::Detail, n.view());
     n.tick(1000 + DETAIL_IDLE_CLOSE_MS + 500, true);   // busy: stays, idle restarts
@@ -120,8 +148,9 @@ void test_hint_tracker_unmapped_keys_far_apart_are_fine(void) {
 
 int main(int, char**) {
     UNITY_BEGIN();
-    RUN_TEST(test_arrows_open_detail_and_apply);
-    RUN_TEST(test_up_down_close_detail_and_move);
+    RUN_TEST(test_overview_arrows_move_over_the_grid);
+    RUN_TEST(test_enter_opens_detail_without_acting);
+    RUN_TEST(test_detail_left_right_adjust_up_down_big_steps);
     RUN_TEST(test_detail_closes_after_idle_unless_busy);
     RUN_TEST(test_space_selects_focus_and_runs_af);
     RUN_TEST(test_jump_opens_detail_back_closes);

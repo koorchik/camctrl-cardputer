@@ -48,18 +48,31 @@ NavKeys UiNav::onKey(RemoteKey k, uint32_t nowMs, bool connected) {
     }
     if (!connected) return out;
 
+    const bool detail = view_ == UiView::Detail;
     switch (k) {
         case RemoteKey::Up:
         case RemoteKey::Down:
-            // Navigation lives in the overview: close and move in one press.
-            view_ = UiView::Overview;
-            out.add(k);
+            if (detail) {
+                out.add(k == RemoteKey::Up ? RemoteKey::Right : RemoteKey::Left);
+                out.big = true;
+            } else {
+                out.add(k);
+            }
             return out;
         case RemoteKey::Left:
         case RemoteKey::Right:
+            if (detail) {
+                out.add(k);
+            } else {
+                out.add(k == RemoteKey::Left ? RemoteKey::ColLeft : RemoteKey::ColRight);
+            }
+            return out;
         case RemoteKey::Enter:
-            view_ = UiView::Detail;
-            out.add(k);
+            if (detail) {
+                out.add(k);
+            } else {
+                view_ = UiView::Detail;
+            }
             return out;
         case RemoteKey::AutoFocus:
             view_ = UiView::Detail;

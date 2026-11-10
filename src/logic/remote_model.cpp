@@ -49,11 +49,18 @@ RemoteCommand RemoteModel::onKey(RemoteKey key, bool big, CameraValues& v) {
     }
     switch (key) {
         case RemoteKey::Up:
-            row_ = (RemoteRow)(((int)row_ + REMOTE_ROWS - 1) % REMOTE_ROWS);
-            return none;
         case RemoteKey::Down:
-            row_ = (RemoteRow)(((int)row_ + 1) % REMOTE_ROWS);
+        case RemoteKey::ColLeft:
+        case RemoteKey::ColRight: {
+            int col = (int)row_ / REMOTE_GRID_ROWS;
+            int r = (int)row_ % REMOTE_GRID_ROWS;
+            if (key == RemoteKey::Up) r = r > 0 ? r - 1 : r;
+            if (key == RemoteKey::Down) r = r < REMOTE_GRID_ROWS - 1 ? r + 1 : r;
+            if (key == RemoteKey::ColLeft) col = 0;
+            if (key == RemoteKey::ColRight) col = 1;
+            row_ = (RemoteRow)(col * REMOTE_GRID_ROWS + r);
             return none;
+        }
         case RemoteKey::Left: return change(-1, big, v);
         case RemoteKey::Right: return change(+1, big, v);
         case RemoteKey::Enter: return rowAction(v);

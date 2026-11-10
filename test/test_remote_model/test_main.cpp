@@ -43,13 +43,27 @@ void test_key_mapping(void) {
     TEST_ASSERT_FALSE(remoteKeyRepeats(RemoteKey::Enter));
 }
 
-void test_row_navigation_wraps(void) {
+void test_grid_navigation(void) {
+    // Two columns: Focus Iris Iso | Wb Tint Feed. Up/Down stay in a column,
+    // ColLeft/ColRight keep the row; edges stop.
     RemoteModel m;
     CameraValues v = camera();
     m.onKey(RemoteKey::Up, false, v);
-    TEST_ASSERT_EQUAL(RemoteRow::Feed, m.row());
-    m.onKey(RemoteKey::Down, false, v);
     TEST_ASSERT_EQUAL(RemoteRow::Focus, m.row());
+    m.onKey(RemoteKey::Down, false, v);
+    m.onKey(RemoteKey::Down, false, v);
+    m.onKey(RemoteKey::Down, false, v);
+    TEST_ASSERT_EQUAL(RemoteRow::Iso, m.row());
+    m.onKey(RemoteKey::ColRight, false, v);
+    TEST_ASSERT_EQUAL(RemoteRow::Feed, m.row());
+    m.onKey(RemoteKey::ColRight, false, v);
+    TEST_ASSERT_EQUAL(RemoteRow::Feed, m.row());
+    m.onKey(RemoteKey::Up, false, v);
+    TEST_ASSERT_EQUAL(RemoteRow::Tint, m.row());
+    m.onKey(RemoteKey::ColLeft, false, v);
+    TEST_ASSERT_EQUAL(RemoteRow::Iris, m.row());
+    m.onKey(RemoteKey::ColLeft, false, v);
+    TEST_ASSERT_EQUAL(RemoteRow::Iris, m.row());
     m.onKey(RemoteKey::JumpTint, false, v);
     TEST_ASSERT_EQUAL(RemoteRow::Tint, m.row());
 }
@@ -166,8 +180,8 @@ void test_unknown_values_send_nothing(void) {
     RemoteModel m;
     CameraValues v;  // nothing known yet
     for (int r = 0; r < REMOTE_ROWS; ++r) {
+        m.onKey((RemoteKey)((int)RemoteKey::JumpFocus + r), false, v);
         TEST_ASSERT_EQUAL(RemoteCmd::None, m.onKey(RemoteKey::Right, false, v).type);
-        m.onKey(RemoteKey::Down, false, v);
     }
 }
 
@@ -233,7 +247,7 @@ void test_limit_hit_on_iso_end_but_not_when_unknown(void) {
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_key_mapping);
-    RUN_TEST(test_row_navigation_wraps);
+    RUN_TEST(test_grid_navigation);
     RUN_TEST(test_focus_steps_and_clamps);
     RUN_TEST(test_autofocus_from_space_and_enter);
     RUN_TEST(test_iris_sends_steps_without_guessing_the_value);

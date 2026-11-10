@@ -37,7 +37,12 @@ struct RemoteCommand {
 enum class RemoteKey : uint8_t {
     None, Up, Down, Left, Right, Enter, AutoFocus, Help, Back,
     JumpFocus, JumpIris, JumpIso, JumpWb, JumpTint, JumpFeed,
+    // Overview grid moves (from UiNav, no key of their own).
+    ColLeft, ColRight,
 };
+
+// The overview is a 2 x 3 grid: Focus Iris Iso | Wb Tint Feed.
+constexpr int REMOTE_GRID_ROWS = 3;
 
 RemoteKey remoteKeyFor(const Key& k);
 // Left/Right/Up/Down repeat while held.

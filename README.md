@@ -27,13 +27,14 @@ camera ──USB (NCM)──> [Cardputer: bridge + remote UI] <──Wi-Fi──
 
 | Key | Action |
 |---|---|
-| `;` `.` (printed ↑ ↓) | choose a control |
-| `,` `/` (printed ← →) | change it — opens the control's detail view; hold = fast |
-| Shift + ← → | big steps (focus ×10, iris ×3, ISO 1 stop, WB 500 K, tint ×10) |
+| `;` `.` `,` `/` (printed ↑ ↓ ← →) | move over the two columns of controls |
+| Enter | open the selected control |
+| ← → (control open) | change it; hold = fast |
+| ↑ ↓ (control open) | big steps (focus ×10, iris ×3, ISO 1 stop, WB 500 K, tint ×10); Shift + ← → too |
 | Space, side button **G0** | **autofocus** |
-| Enter | focus: AF · WB: auto white balance · feed: toggle the selected output · others: open |
+| Enter (control open) | focus: AF · WB: auto white balance · feed: toggle the selected output |
 | `f` `i` `o` `w` `t` `c` | jump to focus, iris, ISO, WB, tint, clean feed |
-| Del / `` ` `` | back to the overview |
+| Del / `` ` `` | back to the overview (also by itself after 3 s idle) |
 | `h` | all keys + Wi‑Fi details (Enter there replays the intro) |
 | G0 held 5 s | factory reset (a countdown appears after 1 s; release to cancel) |
 
@@ -42,7 +43,10 @@ have used the remote a bit (press an unknown key twice to get the full hints bac
 
 ### Screens
 
-- **Overview**: six tiles (FOCUS, IRIS, ISO / WB, TINT, CLEAN FEED) with values and small gauges.
+- **Status bar**: camera name, REC / tally, the camera's battery (level, % and a bolt while
+  charging; `AC` when it runs from mains without a battery), live link, phones on Wi‑Fi.
+- **Overview**: six tiles in two columns (FOCUS, IRIS, ISO | WB, TINT, CLEAN FEED) with values and
+  small gauges.
 - **Detail views** (open while adjusting, close after 3 s idle): a focus tape with the camera's
   real position and an AF viewfinder, an iris with closing blades and the lens's f‑stop range, an
   ISO drum with an EV counter, a Kelvin colour bar with preset icons and an auto‑WB scan, a tint bar

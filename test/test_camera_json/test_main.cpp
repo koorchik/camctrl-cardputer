@@ -143,6 +143,31 @@ void test_tally_and_record(void) {
     TEST_ASSERT_NOT_NULL(strstr(buf, "/transports/0/record"));
 }
 
+void test_power(void) {
+    CameraValues v;
+    TEST_ASSERT_FALSE(v.powerKnown);
+    TEST_ASSERT_TRUE(apply(v, "/camera/power",
+                           "{\"batteries\":[{\"chargeRemainingPercent\":87,\"milliVolt\":12100,"
+                           "\"statusFlags\":[\"Battery Is Present\",\"Battery Is Charging\"]}],"
+                           "\"milliVolt\":12100,\"source\":\"AC\"}"));
+    TEST_ASSERT_TRUE(v.powerKnown);
+    TEST_ASSERT_EQUAL(CameraValues::PowerSource::Ac, v.powerSource);
+    TEST_ASSERT_TRUE(v.batteryPresent);
+    TEST_ASSERT_TRUE(v.batteryCharging);
+    TEST_ASSERT_EQUAL(87, v.batteryPercent);
+    // On battery, no battery list entry flags: not present, not charging.
+    TEST_ASSERT_TRUE(apply(v, "/camera/power", "{\"batteries\":[],\"source\":\"Battery\"}"));
+    TEST_ASSERT_EQUAL(CameraValues::PowerSource::Battery, v.powerSource);
+    TEST_ASSERT_FALSE(v.batteryPresent);
+    TEST_ASSERT_FALSE(v.batteryCharging);
+    TEST_ASSERT_EQUAL(-1, v.batteryPercent);
+    TEST_ASSERT_TRUE(apply(v, "/camera/power", "{\"source\":\"PoE\"}"));
+    TEST_ASSERT_EQUAL(CameraValues::PowerSource::Other, v.powerSource);
+    char buf[768];
+    cameraSubscribeMessage(v, buf, sizeof(buf));
+    TEST_ASSERT_NOT_NULL(strstr(buf, "/camera/power"));
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_lens);
@@ -155,5 +180,6 @@ int main(int, char**) {
     RUN_TEST(test_subscribe_message);
     RUN_TEST(test_encode_path_segment);
     RUN_TEST(test_tally_and_record);
+    RUN_TEST(test_power);
     return UNITY_END();
 }

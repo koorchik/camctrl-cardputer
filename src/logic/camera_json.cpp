@@ -21,6 +21,7 @@ const char* const kSubscribed[] = {
     "/lens/focus",         "/lens/focus/description", "/lens/iris",
     "/lens/iris/description", "/video/iso",         "/video/whiteBalance",
     "/video/whiteBalanceTint", "/camera/tallyStatus", "/transports/0/record",
+    "/camera/power",
 };
 
 bool getNumber(const cJSON* obj, const char* key, double& out) {
@@ -185,6 +186,35 @@ bool applyObject(CameraValues& v, const char* path, const cJSON* root) {
                                                   : CameraValues::Tally::None;
             v.tallyKnown = true;
         }
+        return true;
+    }
+    if (strcmp(path, "/camera/power") == 0) {
+        const cJSON* src = cJSON_GetObjectItemCaseSensitive(root, "source");
+        if (cJSON_IsString(src)) {
+            const char* s = src->valuestring;
+            v.powerSource = strcmp(s, "Battery") == 0 ? CameraValues::PowerSource::Battery
+                            : strcmp(s, "AC") == 0    ? CameraValues::PowerSource::Ac
+                            : strcmp(s, "USB") == 0   ? CameraValues::PowerSource::Usb
+                                                      : CameraValues::PowerSource::Other;
+        }
+        v.batteryPresent = false;
+        v.batteryCharging = false;
+        v.batteryPercent = -1;
+        const cJSON* bats = cJSON_GetObjectItemCaseSensitive(root, "batteries");
+        const cJSON* bat = cJSON_IsArray(bats) ? cJSON_GetArrayItem(bats, 0) : nullptr;
+        if (cJSON_IsObject(bat)) {
+            if (getNumber(bat, "chargeRemainingPercent", d)) v.batteryPercent = (int)d;
+            const cJSON* flags = cJSON_GetObjectItemCaseSensitive(bat, "statusFlags");
+            const cJSON* f = nullptr;
+            cJSON_ArrayForEach(f, flags) {
+                if (!cJSON_IsString(f)) continue;
+                if (strcmp(f->valuestring, "Battery Is Present") == 0) v.batteryPresent = true;
+                if (strcmp(f->valuestring, "Battery Is Charging") == 0) v.batteryCharging = true;
+            }
+            // A percentage without flags still means a battery is there.
+            if (!cJSON_IsArray(flags) && v.batteryPercent >= 0) v.batteryPresent = true;
+        }
+        v.powerKnown = true;
         return true;
     }
     if (strcmp(path, "/transports/0/record") == 0) {

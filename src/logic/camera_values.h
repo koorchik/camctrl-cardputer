@@ -49,6 +49,14 @@ struct CameraValues {
     bool recordKnown = false;
     bool recording = false;
 
+    // /camera/power: where the camera's power comes from and its battery.
+    enum class PowerSource : uint8_t { Unknown, Battery, Ac, Usb, Other };
+    bool powerKnown = false;
+    PowerSource powerSource = PowerSource::Unknown;
+    bool batteryPresent = false;
+    bool batteryCharging = false;
+    int batteryPercent = -1;  // -1: not reported
+
     size_t displayCount = 0;
     char displays[CAM_MAX_DISPLAYS][CAM_DISPLAY_NAME_MAX + 1] = {};
     bool cleanFeedKnown[CAM_MAX_DISPLAYS] = {};
