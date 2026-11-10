@@ -296,7 +296,7 @@ esp_err_t handleLog(httpd_req_t* req) {
 esp_err_t handleReboot(httpd_req_t* req) {
     ++s_requests;
     if (!hasApiHeader(req) || !sameOrigin(req)) return rejectCrossSite(req);
-    char query[32] = "", mode[8] = "";
+    char query[32] = "", mode[16] = "";  // "download" + NUL does not fit in 8
     httpd_req_get_url_query_str(req, query, sizeof(query));
     httpd_query_key_value(query, "mode", mode, sizeof(mode));
     RestartKind kind = RestartKind::Normal;
