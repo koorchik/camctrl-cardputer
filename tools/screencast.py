@@ -30,16 +30,25 @@ SCENES = {
     "navigate": ["k:back", "k:back", "k:f", "k:back", "s*2",
                  "k:down", "s*3", "k:down", "s*3", "k:right", "s*3", "k:up", "s*3", "k:up", "s*3",
                  "k:left", "s*3", "k:enter", "s*3", "k:back", "s*2"],
+    # Every scene steps forward and back again, so the camera ends where it
+    # started (only the focus scene ends with an autofocus).
     "focus": ["k:back", "k:f", "s*2",
               "k:right", "s", "k:right", "s", "k:right", "s", "k:right", "s",
               "k:up", "s*2", "k:down", "s*2",
               "k:space", "s*10"],
+    "iris": ["k:back", "k:i", "s*2", "k:right", "s*4", "k:right", "s*4",
+             "k:left", "s*4", "k:left", "s*5"],
     "shutter": ["k:back", "k:s", "s*2",
-                "k:right", "s*3", "k:right", "s*3", "k:left", "s*3", "k:left", "s*3",
-                "k:back", "s"],
+                "k:right", "s*3", "k:right", "s*3", "k:left", "s*3", "k:left", "s*3"],
+    "iso": ["k:back", "k:o", "s*2", "k:right", "s*3", "k:right", "s*3", "k:up", "s*3",
+            "k:down", "s*3", "k:left", "s*3", "k:left", "s*3"],
+    "white-balance": ["k:back", "k:w", "s*2", "k:right", "s*2", "k:right", "s*2", "k:right", "s*2",
+                      "k:left", "s*2", "k:left", "s*2", "k:left", "s*3"],
+    "tint": ["k:back", "k:t", "s*2", "k:left", "s*2", "k:left", "s*2", "k:down", "s*3",
+             "k:up", "s*3", "k:right", "s*2", "k:right", "s*3"],
+    "clean-feed": ["k:back", "k:c", "s*2", "k:enter", "s*3", "k:right", "s*2", "k:left", "s*2",
+                   "k:enter", "s*4"],
 }
-# Leave the camera as it was: undo the focus steps and AF cannot be undone,
-# so the focus scene ends with an autofocus anyway.
 
 
 def build_script(steps):

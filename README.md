@@ -11,15 +11,13 @@ no cables to a computer, no setup on the camera beyond DHCP. It runs from the ca
   <img src="docs/images/cardputer-remote.png" width="640" alt="Cardputer ADV showing the remote's overview: focus, iris, shutter, ISO, white balance and clean feed with live camera values">
 </p>
 
-| Pick a control | Focus and autofocus | Shutter |
+| **Pick a control** | **Focus and autofocus** | **Iris** |
 |---|---|---|
-| ![Moving over the controls with the arrow keys](docs/images/navigate.gif) | ![Focus steps, big steps and one-press autofocus](docs/images/focus.gif) | ![Stepping the shutter through the camera's speeds](docs/images/shutter.gif) |
-
-| Focus | Iris | Shutter |
-|---|---|---|
-| ![Focus tape with the lens position](docs/images/focus.png) | ![Iris blades and f-stop scale](docs/images/iris.png) | ![Shutter drum, rotary shutter and flicker-free marks](docs/images/shutter.png) |
-| **ISO** | **White balance** | **Clean feed** |
-| ![ISO drum](docs/images/iso.png) | ![Kelvin colour bar with the tint below](docs/images/white-balance.png) | ![Mini monitors for SDI, HDMI and USB](docs/images/clean-feed.png) |
+| ![Moving over the controls with the arrow keys](docs/images/navigate.gif) | ![Focus steps, big steps and one-press autofocus](docs/images/focus.gif) | ![Closing and opening the iris by steps](docs/images/iris.gif) |
+| **Shutter** | **ISO** | **White balance** |
+| ![Stepping the shutter through the camera speeds, with the rotary shutter](docs/images/shutter.gif) | ![ISO drum with the EV counter](docs/images/iso.gif) | ![Kelvin steps on the colour bar](docs/images/white-balance.gif) |
+| **Tint** | **Clean feed** | **All keys (h)** |
+| ![Tint steps towards green and back](docs/images/tint.gif) | ![Turning clean feed off and on for the SDI output](docs/images/clean-feed.gif) | ![Help screen with all keys](docs/images/help.png) |
 
 Screens and animations are recorded from the device with a real camera attached
 (`tools/screenshots.py`, `tools/screencast.py`). Cardputer ADV photo: M5Stack.
