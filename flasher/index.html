@@ -14,9 +14,11 @@
   h1 { font-size: 34px; margin: 0 0 4px; letter-spacing: -0.5px; }
   h1 span { color: var(--accent); }
   .lead { color: var(--dim); margin: 0 0 28px; font-size: 18px; }
-  .hero img { width: 100%; border-radius: 12px; display: block; }
-  .shots { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 12px 0 32px; }
-  .shots img { width: 100%; border-radius: 8px; display: block; }
+  .hero { max-width: 480px; margin: 0 auto; }
+  .shots { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin: 18px 0 32px; }
+  .frame { background: #1a1f26; border: 1px solid #2c333d; border-radius: 14px; padding: 8px; box-shadow: 0 6px 18px rgba(0,0,0,.45); }
+  .frame img { width: 100%; display: block; border-radius: 8px; }
+  .cap { color: var(--dim); font-size: 13px; text-align: center; margin-top: 6px; }
   h2 { font-size: 20px; margin: 36px 0 12px; }
   ol { padding-left: 22px; margin: 0; }
   li { margin: 8px 0; }
@@ -28,7 +30,7 @@
   .note { color: var(--dim); font-size: 14px; }
   a { color: #7cc4ff; }
   code { font: 14px ui-monospace, monospace; background: var(--panel); padding: 1px 5px; border-radius: 4px; }
-  @media (max-width: 560px) { .shots { grid-template-columns: 1fr 1fr; } h1 { font-size: 28px; } }
+  @media (max-width: 560px) { .shots { grid-template-columns: 1fr; } h1 { font-size: 28px; } }
 </style>
 </head>
 <body>
@@ -36,11 +38,11 @@
   <h1>CamCtrl <span>Cardputer</span></h1>
   <p class="lead">A handheld remote for Blackmagic cameras. Plug the Cardputer ADV into the camera's USB‑C port: one‑press autofocus, focus, iris, shutter, ISO, white balance, tint and clean feed on its own screen and keyboard. Phones with the <a href="https://camctrl.app/">CamCtrl app</a> control the camera over its Wi‑Fi at the same time.</p>
 
-  <div class="hero"><img src="images/overview.png" alt="Overview screen: focus, iris, ISO, white balance, tint and clean feed tiles with live camera values"></div>
+  <div class="hero"><div class="frame"><img src="images/overview.png" alt="Overview screen: focus, iris, shutter, ISO, white balance and clean feed tiles with live camera values"></div><div class="cap">All controls at a glance</div></div>
   <div class="shots">
-    <img src="images/focus.png" alt="Focus detail with a focus tape">
-    <img src="images/iris.png" alt="Iris detail with aperture blades and f-stop scale">
-    <img src="images/white-balance.png" alt="White balance detail with a Kelvin colour bar">
+    <div><div class="frame"><img src="images/focus.png" alt="Focus detail with a focus tape"></div><div class="cap">Focus</div></div>
+    <div><div class="frame"><img src="images/shutter.png" alt="Shutter detail with a drum of speeds and a rotary shutter"></div><div class="cap">Shutter</div></div>
+    <div><div class="frame"><img src="images/white-balance.png" alt="White balance detail with a Kelvin colour bar"></div><div class="cap">White balance</div></div>
   </div>
 
   <h2>Install from this page</h2>
