@@ -1298,26 +1298,23 @@ void drawConnection(const UiState& s) {
     s_c->drawString(title, W / 2, 61);
 
     if (s.powerSwitchHint) {
-        // Only the Cardputer's own switch matters: with its battery on, the
-        // camera never starts its USB host.
-        s_c->fillRoundRect(4, 66, 232, 54, 5, ERR);
-        s_c->fillRoundRect(14, 80, 34, 16, 8, BG);
-        s_c->fillCircle(22, 88, 6, TEXT);
+        // No USB host after 15 s. The board cannot tell why: the Cardputer's
+        // battery switch on (the camera then never starts its USB host), a
+        // charge-only cable or a loose plug all look the same. A checklist,
+        // not an accusation.
+        s_c->fillRoundRect(4, 66, 232, 54, 5, PANEL);
+        s_c->drawRoundRect(4, 66, 232, 54, 5, WARN);
+        s_c->setFont(F2);
+        s_c->setTextDatum(textdatum_t::top_center);
+        s_c->setTextColor(WARN);
+        s_c->drawString("No USB data from camera", W / 2, 69);
         s_c->setFont(F0);
         s_c->setTextDatum(textdatum_t::top_left);
         s_c->setTextColor(TEXT);
-        s_c->drawString("OFF", 14, 99);
-        s_c->setTextColor(blend(TEXT, ERR, 0.5f));
-        s_c->drawString("ON", 40, 99);
-        const int nudge = (s.nowMs / 500) % 2 ? 2 : 0;
-        A.active = true;
-        s_c->fillTriangle(40 - nudge, 70, 40 - nudge, 76, 34 - nudge, 73, TEXT);
-        s_c->setFont(F2);
-        s_c->setTextColor(TEXT);
-        s_c->drawString("Set the CARDPUTER", 58, 69);
-        s_c->drawString("power switch OFF", 58, 85);
-        s_c->setFont(F0);
-        s_c->drawString("Battery on = camera USB stays off", 58, 106);
+        s_c->drawString("- Cardputer power switch OFF", 14, 88);
+        s_c->drawString("- Data cable, firmly plugged in", 14, 99);
+        s_c->setTextColor(TEXT_2);
+        s_c->drawString("- then unplug and replug it", 14, 110);
     } else {
         s_c->setFont(F2);
         s_c->setTextDatum(textdatum_t::top_center);
