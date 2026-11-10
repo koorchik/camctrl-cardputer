@@ -51,6 +51,12 @@ for full in dist/*-full.bin; do
 }
 JSON
 done
+# Cache busting: Pages caches files for 10 minutes, so every image link
+# carries a hash of its content and changes when the image does.
+for f in "$SITE"/images/*; do
+    name="images/$(basename "$f")"
+    sed -i "s#\"$name\"#\"$name?v=$(sha256sum "$f" | cut -c1-8)\"#g" "$SITE/index.html"
+done
 touch "$SITE/.nojekyll"
 git -C "$SITE" add -A
 git -C "$SITE" commit -qm "Installer for $NAME $VER" || echo "installer unchanged"
