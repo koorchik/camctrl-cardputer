@@ -8,8 +8,12 @@ keyboard. No phone,
 no cables to a computer, no setup on the camera beyond DHCP. It runs from the camera's port.
 
 <p align="center">
-  <img src="docs/images/cardputer-remote.png" width="640" alt="Cardputer with the remote's overview screen: focus, iris, shutter, ISO, white balance and clean feed with live camera values; the keys the remote uses are highlighted in amber">
+  <img src="docs/images/cardputer-remote.png" width="640" alt="Cardputer ADV showing the remote's overview: focus, iris, shutter, ISO, white balance and clean feed with live camera values">
 </p>
+
+| Pick a control | Focus and autofocus | Shutter |
+|---|---|---|
+| ![Moving over the controls with the arrow keys](docs/images/navigate.gif) | ![Focus steps, big steps and one-press autofocus](docs/images/focus.gif) | ![Stepping the shutter through the camera's speeds](docs/images/shutter.gif) |
 
 | Focus | Iris | Shutter |
 |---|---|---|
@@ -17,7 +21,8 @@ no cables to a computer, no setup on the camera beyond DHCP. It runs from the ca
 | **ISO** | **White balance** | **Clean feed** |
 | ![ISO drum](docs/images/iso.png) | ![Kelvin colour bar with the tint below](docs/images/white-balance.png) | ![Mini monitors for SDI, HDMI and USB](docs/images/clean-feed.png) |
 
-All screenshots are taken from the device with a real camera attached (`tools/screenshots.py`).
+Screens and animations are recorded from the device with a real camera attached
+(`tools/screenshots.py`, `tools/screencast.py`). Cardputer ADV photo: M5Stack.
 
 ## Full control from your phone: CamCtrl
 
@@ -150,6 +155,8 @@ pio run -e cardputer
 tools/flash.sh                 # OTA when 192.168.73.1 answers, else USB serial
 tools/release.sh               # release images into dist/
 tools/screenshots.py --adb     # README screenshots from the device (through a phone with adb)
+tools/screencast.py            # README GIFs from the device (through a phone with adb)
+tools/product_shot.py docs/images/overview.png docs/images/cardputer-remote.png
 tools/publish-flasher.sh       # browser installer to GitHub Pages
 ```
 

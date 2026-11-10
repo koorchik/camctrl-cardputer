@@ -36,7 +36,7 @@ mkdir -p "$SITE/esp-web-tools"
 tar -xzf "$EWT_TGZ" -C "$SITE/esp-web-tools" --strip-components=3 package/dist/web
 rm -f "$EWT_TGZ"
 mkdir -p "$SITE/images" "$SITE/firmware"
-cp docs/images/*.png "$SITE/images/" 2>/dev/null || true
+cp docs/images/*.png docs/images/*.gif "$SITE/images/" 2>/dev/null || true
 for full in dist/*-full.bin; do
     env="$(basename "$full" | sed "s/^$NAME-\(.*\)-v$VER-full.bin$/\1/")"
     cp "$full" "$SITE/firmware/"
