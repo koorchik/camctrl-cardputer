@@ -643,6 +643,14 @@ void task(void*) {
 }  // namespace
 
 void cameraClientStart() {
+    // Without a camera these libraries log every failed connect (every 2 s),
+    // which pushes everything useful out of the /api/log ring buffer. The
+    // client logs its own state changes instead.
+    esp_log_level_set("esp-tls", ESP_LOG_NONE);
+    esp_log_level_set("transport_base", ESP_LOG_NONE);
+    esp_log_level_set("transport_ws", ESP_LOG_NONE);
+    esp_log_level_set("HTTP_CLIENT", ESP_LOG_NONE);
+    esp_log_level_set("websocket_client", ESP_LOG_NONE);
     s_lock = xSemaphoreCreateMutex();
     s_cmdQueue = xQueueCreate(32, sizeof(RemoteCommand));
     xTaskCreate(task, "camera", 6144, nullptr, 5, nullptr);
