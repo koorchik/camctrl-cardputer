@@ -11,13 +11,11 @@ no cables to a computer, no setup on the camera beyond DHCP. It runs from the ca
   <img src="docs/images/cardputer-remote.png" width="640" alt="Cardputer ADV showing the remote's overview: focus, iris, shutter, ISO, white balance and clean feed with live camera values">
 </p>
 
-| **Pick a control** | **Focus and autofocus** | **Iris** |
-|---|---|---|
-| ![Moving over the controls with the arrow keys](docs/images/navigate.gif) | ![Focus steps, big steps and one-press autofocus](docs/images/focus.gif) | ![Closing and opening the iris by steps](docs/images/iris.gif) |
-| **Shutter** | **ISO** | **White balance** |
-| ![Stepping the shutter through the camera speeds, with the rotary shutter](docs/images/shutter.gif) | ![ISO drum with the EV counter](docs/images/iso.gif) | ![Kelvin steps on the colour bar](docs/images/white-balance.gif) |
-| **Tint** | **Clean feed** | **All keys (h)** |
-| ![Tint steps towards green and back](docs/images/tint.gif) | ![Turning clean feed off and on for the SDI output](docs/images/clean-feed.gif) | ![Help screen with all keys](docs/images/help.png) |
+<table>
+  <tr><td align="center" width="33%"><img src="docs/images/navigate.gif" width="260" alt="Moving over the controls with the arrow keys"><br><b>Pick a control</b></td><td align="center" width="33%"><img src="docs/images/focus.gif" width="260" alt="Focus steps, big steps and one-press autofocus"><br><b>Focus and autofocus</b></td><td align="center" width="33%"><img src="docs/images/iris.gif" width="260" alt="Closing and opening the iris by steps"><br><b>Iris</b></td></tr>
+  <tr><td align="center" width="33%"><img src="docs/images/shutter.gif" width="260" alt="Stepping the shutter through the camera speeds, with the rotary shutter"><br><b>Shutter</b></td><td align="center" width="33%"><img src="docs/images/iso.gif" width="260" alt="ISO drum with the EV counter"><br><b>ISO</b></td><td align="center" width="33%"><img src="docs/images/white-balance.gif" width="260" alt="Kelvin steps on the colour bar"><br><b>White balance</b></td></tr>
+  <tr><td align="center" width="33%"><img src="docs/images/tint.gif" width="260" alt="Tint steps towards green and back"><br><b>Tint</b></td><td align="center" width="33%"><img src="docs/images/clean-feed.gif" width="260" alt="Turning clean feed off and on for the SDI output"><br><b>Clean feed</b></td><td align="center" width="33%"><img src="docs/images/help.png" width="260" alt="Help screen with all keys"><br><b>All keys (h)</b></td></tr>
+</table>
 
 Screens and animations are recorded from the device with a real camera attached
 (`tools/screenshots.py`, `tools/screencast.py`). Cardputer ADV photo: M5Stack.
