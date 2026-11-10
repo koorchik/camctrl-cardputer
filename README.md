@@ -1,79 +1,160 @@
-# CamCtrl Cardputer: handheld remote for Blackmagic cameras
+# CamCtrl Cardputer
 
-Firmware for the M5Stack Cardputer ADV. Plug it into a Blackmagic camera's USB‑C port (tested with a
-Micro Studio Camera 4K G2) and hold it in your hand: autofocus with one key, and adjust focus,
-iris, ISO, white balance, tint and clean feed on the Cardputer's own screen and keyboard.
+**A handheld remote for Blackmagic cameras, on the M5Stack Cardputer ADV.**
 
-It is the [EthAir](https://github.com/koorchik/ethair) firmware (USB Ethernet ↔ Wi‑Fi bridge)
-plus the remote. Everything EthAir does still works at the same time: the camera gets
-`192.168.73.2`, phones join `EthAir-XXXX` (password `ethair123`) and the CamCtrl phone app can
-control the camera in parallel; both see each other's changes through the camera's event stream.
+Plug the Cardputer into the camera's USB‑C port and hold it in your hand: one‑press autofocus,
+and focus, iris, shutter, ISO, white balance (with tint) and clean feed on its own screen and
+keyboard. No phone,
+no cables to a computer, no setup on the camera beyond DHCP. It runs from the camera's port.
 
+<p align="center">
+  <img src="docs/images/overview.png" width="540" alt="Overview: focus, iris, ISO, white balance, tint and clean feed tiles with live camera values, camera battery in the status bar">
+</p>
+
+| Focus | Iris | Shutter |
+|---|---|---|
+| ![Focus tape with the lens position](docs/images/focus.png) | ![Iris blades and f-stop scale](docs/images/iris.png) | ![Shutter drum, rotary shutter and flicker-free marks](docs/images/shutter.png) |
+| **ISO** | **White balance** | **Clean feed** |
+| ![ISO drum](docs/images/iso.png) | ![Kelvin colour bar with the tint below](docs/images/white-balance.png) | ![Mini monitors for SDI, HDMI and USB](docs/images/clean-feed.png) |
+
+All screenshots are taken from the device with a real camera attached (`tools/screenshots.py`).
+
+## Full control from your phone: CamCtrl
+
+The Cardputer is also a Wi‑Fi bridge to the camera (it is a full
+**[EthAir](https://github.com/koorchik/ethair)** adapter). Join its Wi‑Fi with a phone or tablet and
+**[CamCtrl](https://camctrl.app/)**, the full remote app for Blackmagic cameras, controls
+everything else: focus and iris with touch, exposure, colour wheels, audio, media, recording and
+monitoring overlays. The pocket remote and the app work **at the same time** and see each other's
+changes live.
+
+```mermaid
+flowchart LR
+    cam["Blackmagic camera<br/>192.168.73.2"]
+    cp["Cardputer ADV<br/>CamCtrl Cardputer<br/>remote + bridge, 192.168.73.1"]
+    app["CamCtrl app<br/>phone / tablet<br/>camctrl.app"]
+    cam <-- "USB‑C cable<br/>(USB Ethernet)" --> cp
+    cp <-- "Wi‑Fi EthAir‑XXXX<br/>password ethair123" --> app
 ```
-camera ──USB (NCM)──> [Cardputer: bridge + remote UI] <──Wi-Fi── phone app (optional)
-                        192.168.73.1
+
+1. Plug the Cardputer into the camera (below).
+2. On the phone, join the Wi‑Fi **`EthAir-XXXX`** (password **`ethair123`**; both are shown under
+   `h` → `h` on the Cardputer).
+3. Open CamCtrl: it finds the camera by itself, or enter **`192.168.73.2`**.
+
+Any other app or browser that speaks the camera's REST API works the same way.
+
+## Install
+
+### In the browser (easiest)
+
+Open **[koorchik.github.io/camctrl-cardputer](https://koorchik.github.io/camctrl-cardputer/)** in
+Chrome or Edge on a computer and follow the steps there.
+
+### With esptool
+
+Download `camctrl-cardputer-cardputer-vX.Y.Z-full.bin` from the
+[latest release](https://github.com/koorchik/camctrl-cardputer/releases/latest). Put the Cardputer
+into download mode (power switch off, hold **G0**, switch on, release), then:
+
+```bash
+esptool.py --chip esp32s3 write_flash 0x0 camctrl-cardputer-cardputer-v1.0.0-full.bin
 ```
 
-## Using it
+Switch it off and on again afterwards.
 
-1. Camera network settings: **DHCP**.
-2. **Set the Cardputer's power switch to OFF** and plug the USB cable into the camera. With the
-   battery on, the Cardputer puts 5 V on the port and the camera never starts its USB host (after
-   15 s the screen says so).
-3. The connection screen walks through USB → NETWORK → CAMERA. On the first connection a two‑card
-   intro shows the keys.
+### M5Burner
+
+Search for **CamCtrl** in M5Burner's Cardputer section (once it is published there).
+
+> Cardputer **ADV** only: the remote needs the ADV's keyboard controller (TCA8418).
+
+## Use
+
+1. On the camera: network settings → **DHCP**.
+2. **Set the Cardputer's own power switch OFF**, then plug it into the camera's USB‑C port. It runs
+   from the camera. (With the battery on, the Cardputer puts 5 V on the port and the camera never
+   starts its USB host.)
+3. The screen walks through USB → network → camera. The first time, two cards show the keys:
+
+| | |
+|---|---|
+| ![One-press autofocus: Space or the side button G0](docs/images/intro-autofocus.png) | ![Arrows pick a control, Enter opens it, left/right change, up/down big step](docs/images/intro-keys.png) |
 
 ### Keys
 
-| Key | Action |
+| Key | |
 |---|---|
 | `;` `.` `,` `/` (printed ↑ ↓ ← →) | move over the two columns of controls |
-| Enter | open the selected control |
-| ← → (control open) | change it; hold = fast |
-| ↑ ↓ (control open) | big steps (focus ×10, iris ×3, ISO 1 stop, WB 500 K, tint ×10); Shift + ← → too |
-| Space, side button **G0** | **autofocus** |
-| Enter (control open) | focus: AF · WB: auto white balance · feed: toggle the selected output |
-| `f` `i` `o` `w` `t` `c` | jump to focus, iris, ISO, WB, tint, clean feed |
-| Del / `` ` `` | back to the overview (also by itself after 3 s idle) |
-| `h` | all keys; `h` again: Wi‑Fi details (Enter there replays the intro) |
-| G0 held 5 s | factory reset (a countdown appears after 1 s; release to cancel) |
+| **Enter** | open the selected control |
+| ← → | change it (hold = fast) |
+| ↑ ↓ | big step: focus ×10, iris ×3, shutter and ISO 3 steps, WB 500 K, tint ×10 (Shift + ← → too) |
+| **Enter** (control open) | focus: autofocus · WB: auto white balance · clean feed: toggle the output |
+| **Space** or side button **G0** | **autofocus** |
+| `f` `i` `s` `o` `w` `c` | jump to focus, iris, shutter, ISO, white balance, clean feed |
+| `t` | tint (it belongs to white balance and has no tile of its own) |
+| **Del** / `` ` `` | back to all controls (also by itself after 3 s) |
+| `h` | all keys; `h` again: Wi‑Fi name, password, settings address |
+| G0 held 5 s | factory reset (release to cancel) |
 
-The screen has no key strip: press `h` for the keys (a second `h` shows the Wi‑Fi details). An
-unknown key pressed twice reminds you of `h`.
+<p align="center"><img src="docs/images/help.png" width="420" alt="Help screen with all keys"></p>
 
-### Screens
+### Reading the screen
 
-- **Status bar**: camera name, REC / tally, the camera's battery (level, % and a bolt while
-  charging; `AC` when it runs from mains without a battery), live link, phones on Wi‑Fi.
-- **Overview**: six tiles in two columns (FOCUS, IRIS, ISO | WB, TINT, CLEAN FEED) with values and
-  small gauges.
-- **Detail views** (open while adjusting, close after 3 s idle): a focus tape with the camera's
-  real position and an AF viewfinder, an iris with closing blades and the lens's f‑stop range, an
-  ISO drum with an EV counter, a Kelvin colour bar with preset icons and an auto‑WB scan, a tint bar
-  with a grey card, and per‑output mini monitors for clean feed.
-- Amber values are sent but not yet confirmed by the camera; white values are what the camera
-  reports; a blue flash means the value was changed elsewhere (e.g. the phone app). A red frame
-  means the camera is recording / on program.
+- **Top bar:** camera name, `REC` / `PGM` / `PVW`, the camera's battery (a bolt while charging,
+  `AC` without a battery), a green dot for the live link (amber blinking: polling), phones on
+  Wi‑Fi.
+- **Amber** values are sent but not yet confirmed by the camera; **white** is what the camera
+  reports; a **blue flash** means someone changed it elsewhere (e.g. a phone app).
+- A **red frame** around the screen: the camera is recording or on program.
+- **Shutter** shows a speed (`1/125`) or an angle (`180°`), whichever the camera is set to, with
+  the other unit below at the current frame rate. Green marks are flicker‑free values.
+- **Tint** sits on the white‑balance tile and screen; `t` opens it.
 
-## Building and flashing
+## Troubleshooting
 
-ESP‑IDF 6.1 via PlatformIO (M5GFX as an ESP‑IDF component, own TCA8418 keyboard driver).
+| What you see | What to do |
+|---|---|
+| `No USB data from camera` | Cardputer power switch **OFF**; a USB‑C **data** cable; push the plug in firmly or flip it. |
+| `WAITING FOR CAMERA` | Set the camera's network to DHCP. |
+| `LENS NOT CONTROLLABLE` | The lens has no electronic focus/iris. |
+| `… SET BY AUTO EXPOSURE` | The camera's auto exposure owns the iris or shutter; switch it off on the camera. |
+| Phone app cannot see the camera | Join `EthAir-XXXX` (password `ethair123`, also under `h` → `h`); Android 17+: allow *Nearby devices* for the app. |
+
+## Updating
+
+From a computer or phone on the Cardputer's Wi‑Fi (or USB):
 
 ```bash
-pio test -e native             # pure logic: key map, remote model, navigation, camera JSON, DHCP, bridge…
-pio run -e cardputer
-tools/flash.sh                 # over the network (OTA) when reachable at 192.168.73.1, else USB serial
-tools/flash.sh cardputer --usb
+curl -H "X-EthAir: 1" --data-binary @camctrl-cardputer-cardputer-v1.0.0-ota.bin http://192.168.73.1/api/ota
 ```
 
-Flashing paths, safe mode and automatic rollback are the same as in EthAir (see its README):
-an OTA image that does not confirm itself within 90 s restarts and rolls back; two crashes in a
-row start safe mode (USB becomes a serial port for 3 minutes). With the Cardputer in the camera,
-OTA works from any machine on its Wi‑Fi (e.g. a phone: `curl -H "X-EthAir: 1" --data-binary
-@firmware.bin http://192.168.73.1/api/ota`).
+The board keeps a new image only after it has run 30 s and served a request; otherwise it rolls
+back by itself. The installed version is under `h` → `h` and on `http://192.168.73.1`.
 
-## Design documents
+## Building
 
-- `docs/superpowers/specs/2026-11-10-camctrl-cardputer-design.md` — goals, protocol, keys.
-- `docs/superpowers/specs/2026-11-10-remote-ui-design.md` — the UI spec (layouts, colours, states).
-- `docs/superpowers/specs/2026-11-10-usb-ethernet-wifi-adapter-design.md` — the EthAir base.
+ESP‑IDF 6.1 through PlatformIO; M5GFX as an ESP‑IDF component; own TCA8418 keyboard driver.
+
+```bash
+pio test -e native             # pure logic: keys, navigation, camera JSON, DHCP, bridge…
+pio run -e cardputer
+tools/flash.sh                 # OTA when 192.168.73.1 answers, else USB serial
+tools/release.sh               # release images into dist/
+tools/screenshots.py --adb     # README screenshots from the device (through a phone with adb)
+tools/publish-flasher.sh       # browser installer to GitHub Pages
+```
+
+Extra endpoints for automation: `GET /api/screen` (the screen as 240 × 135 RGB565) and
+`POST /api/key?k=up|down|left|right|enter|space|back|h|f|i|s|o|w|t|c`, both with the header
+`X-EthAir: 1`. Everything else (OTA with rollback, safe mode, settings page, API) is as in
+[EthAir](https://github.com/koorchik/ethair#under-the-hood).
+
+Design documents: `docs/superpowers/specs/2026-11-10-camctrl-cardputer-design.md` (goals,
+protocol) and `docs/superpowers/specs/2026-11-10-remote-ui-design.md` (every screen).
+
+## Limits
+
+- Cardputer ADV only. Tested with a Blackmagic Micro Studio Camera 4K G2 (camera firmware 9.6.2);
+  other Blackmagic cameras with the REST control API should work but are untested.
+- One camera per Cardputer. Up to 4 Wi‑Fi clients at a time.

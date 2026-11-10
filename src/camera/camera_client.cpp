@@ -25,6 +25,7 @@ constexpr uint32_t IRIS_SETTLE_MS = 300;        // one iris write in flight
 constexpr uint32_t LOCAL_HOLD_MS = 800;         // ignore reports this long after a local change
 constexpr uint32_t POLL_MS = 2000;              // REST polling while the WebSocket is down
 constexpr uint32_t DESCRIPTION_POLL_MS = 10000; // iris range changes with zoom
+constexpr uint32_t FOCUS_POLL_MS = 1000;        // no focus events after autofocus
 constexpr int MAX_FAILURES = 3;
 
 SemaphoreHandle_t s_lock = nullptr;
@@ -49,7 +50,7 @@ uint32_t s_noticeMs = 0;
 // When the user last changed each value here (ms), so stale camera reports
 // do not snap the screen back while the camera catches up.
 struct Holds {
-    uint32_t focus = 0, iso = 0, wb = 0, tint = 0;
+    uint32_t focus = 0, iso = 0, wb = 0, tint = 0, shutter = 0;
     uint32_t feed[CAM_MAX_DISPLAYS] = {};
 } s_holds;
 
@@ -59,6 +60,17 @@ uint32_t nowMs() {
 
 bool held(uint32_t at, uint32_t now) {
     return at && now - at < LOCAL_HOLD_MS;
+}
+
+// Calls fn(hold) for every hold timestamp.
+template <typename Fn>
+void forEachHold(Fn fn) {
+    fn(s_holds.focus);
+    fn(s_holds.iso);
+    fn(s_holds.wb);
+    fn(s_holds.tint);
+    fn(s_holds.shutter);
+    for (uint32_t& f : s_holds.feed) fn(f);
 }
 
 // Caller holds s_lock.
@@ -103,6 +115,10 @@ void applyKeepingLocal(Fn apply) {
     if (held(s_holds.iso, now)) s_values.iso = before.iso;
     if (held(s_holds.wb, now)) s_values.wb = before.wb;
     if (held(s_holds.tint, now)) s_values.tint = before.tint;
+    if (held(s_holds.shutter, now)) {
+        s_values.shutterSpeed = before.shutterSpeed;
+        s_values.shutterAngle = before.shutterAngle;
+    }
     if (!s_actual.connected) s_values.connected = before.connected;
     for (size_t i = 0; i < CAM_MAX_DISPLAYS; ++i) {
         if (held(s_holds.feed[i], now) && i < s_values.displayCount &&
@@ -130,6 +146,11 @@ void reconcileLocked(uint32_t now) {
     if (s_holds.tint && !held(s_holds.tint, now)) {
         s_holds.tint = 0;
         s_values.tint = s_actual.tint;
+    }
+    if (s_holds.shutter && !held(s_holds.shutter, now)) {
+        s_holds.shutter = 0;
+        s_values.shutterSpeed = s_actual.shutterSpeed;
+        s_values.shutterAngle = s_actual.shutterAngle;
     }
     for (size_t i = 0; i < CAM_MAX_DISPLAYS; ++i) {
         if (s_holds.feed[i] && !held(s_holds.feed[i], now)) {
@@ -257,10 +278,24 @@ bool put(const char* path, const char* json) {
         xSemaphoreTake(s_lock, portMAX_DELAY);
         noticeLocked(status == 403 ? "NOT ALLOWED (403)" : (status < 0 ? "NO REPLY FROM CAMERA" : "WRITE FAILED"),
                      NoticeKind::Error);
-        s_failedAt = nowMs();
-        // Show the camera's value again right away.
-        s_holds = Holds();
-        reconcileLocked(nowMs());
+        const uint32_t now = nowMs();
+        s_failedAt = now;
+        // Show the camera's value again right away: expire every hold (a
+        // cleared hold would leave the rejected value on screen).
+        const uint32_t expired = now - LOCAL_HOLD_MS ? now - LOCAL_HOLD_MS : 1;
+        forEachHold([&](uint32_t& h) {
+            if (h) h = expired;
+        });
+        reconcileLocked(now);
+        xSemaphoreGive(s_lock);
+    } else {
+        // The hold counts from when the camera got the value, not from the
+        // key press: a slow request must not snap the screen back early.
+        xSemaphoreTake(s_lock, portMAX_DELAY);
+        const uint32_t now = nowMs();
+        forEachHold([&](uint32_t& h) {
+            if (held(h, now)) h = now;
+        });
         xSemaphoreGive(s_lock);
     }
     return ok;
@@ -287,7 +322,7 @@ void fetchCleanFeeds() {
 void pollValues() {
     // Stop at the first transport error so an absent camera does not keep
     // the task busy for 2.5 s per request.
-    const char* paths[] = {"/lens/focus", "/lens/iris", "/video/iso", "/video/whiteBalance",
+    const char* paths[] = {"/lens/focus", "/lens/iris", "/video/shutter", "/video/iso", "/video/whiteBalance",
                            "/video/whiteBalanceTint", "/camera/tallyStatus", "/transports/0/record"};
     const int failuresBefore = s_failures;
     for (const char* p : paths) {
@@ -302,7 +337,8 @@ bool fetchAll() {
     const char* paths[] = {
         "/lens/focus/description", "/lens/iris/description", "/video/supportedISOs",
         "/video/whiteBalance/description", "/video/whiteBalanceTint/description",
-        "/monitoring/display", "/camera/power",
+        "/monitoring/display", "/camera/power", "/video/supportedShutters",
+        "/video/flickerFreeShutters", "/video/shutter/measurement", "/system/format",
     };
     for (const char* p : paths) getAndApply(p);
     pollValues();
@@ -397,6 +433,9 @@ struct Pending {
     bool autoWb = false;
     bool tint = false;
     int tintValue = 0;
+    bool shutter = false;
+    int shutterValue = 0;
+    bool shutterAngle = false;
     bool feed[CAM_MAX_DISPLAYS] = {};
     bool feedValue[CAM_MAX_DISPLAYS] = {};
 };
@@ -406,6 +445,11 @@ void collect(Pending& p, const RemoteCommand& c) {
         case RemoteCmd::SetFocus: p.focus = true; p.focusValue = c.f; break;
         case RemoteCmd::AutoFocus: p.autoFocus = true; p.focus = false; break;
         case RemoteCmd::IrisStep: p.irisSteps += c.i; break;
+        case RemoteCmd::SetShutter:
+            p.shutter = true;
+            p.shutterValue = c.i;
+            p.shutterAngle = c.b;
+            break;
         case RemoteCmd::SetIso: p.iso = true; p.isoValue = c.i; break;
         case RemoteCmd::SetWb: p.wb = true; p.wbValue = c.i; p.autoWb = false; break;
         case RemoteCmd::AutoWb: p.autoWb = true; p.wb = false; break;
@@ -488,6 +532,12 @@ void sendPending(Pending& p, Timers& t) {
         snprintf(json, sizeof(json), "{\"whiteBalance\":%d}", p.wbValue);
         put("/video/whiteBalance", json);
     }
+    if (p.shutter) {
+        p.shutter = false;
+        snprintf(json, sizeof(json), p.shutterAngle ? "{\"shutterAngle\":%d}" : "{\"shutterSpeed\":%d}",
+                 p.shutterValue);
+        put("/video/shutter", json);
+    }
     if (p.tint) {
         p.tint = false;
         snprintf(json, sizeof(json), "{\"whiteBalanceTint\":%d}", p.tintValue);
@@ -523,7 +573,7 @@ void sendPending(Pending& p, Timers& t) {
 }
 
 bool pendingWork(const Pending& p) {
-    if (p.focus || p.irisSteps || p.autoFocus || p.iso || p.wb || p.autoWb || p.tint) return true;
+    if (p.focus || p.irisSteps || p.autoFocus || p.iso || p.wb || p.autoWb || p.tint || p.shutter) return true;
     for (bool f : p.feed) {
         if (f) return true;
     }
@@ -538,6 +588,10 @@ void setPhase(CameraPhase phase) {
         s_values.connected = false;
         s_actual.connected = false;
         s_wasLive = false;
+        // Nothing is running on a camera that is gone (keeps the detail
+        // view from staying "busy" forever).
+        s_af = s_awb = OpState::Idle;
+        s_irisQueued = 0;
     }
     xSemaphoreGive(s_lock);
 }
@@ -548,6 +602,7 @@ void task(void*) {
     uint32_t connectedIp = 0;
     uint32_t lastPoll = 0;
     uint32_t lastDescription = 0;
+    uint32_t lastFocusPoll = 0;
     uint32_t nextAttempt = 0;
 
     while (true) {
@@ -625,12 +680,21 @@ void task(void*) {
             lastPoll = now;
             pollValues();
         }
+        // The camera sends no focus event after an autofocus (ours or one
+        // started from a phone app), so focus is read once a second anyway.
+        if (s_wsLive && now - lastFocusPoll >= FOCUS_POLL_MS) {
+            lastFocusPoll = now;
+            getAndApply("/lens/focus");
+        }
         if (now - lastDescription >= DESCRIPTION_POLL_MS) {
             lastDescription = now;
             getAndApply("/lens/iris/description");
             if (!s_wsLive) getAndApply("/lens/focus/description");
-            // Battery level changes slowly and may not come as an event.
+            // Battery level changes slowly and may not come as an event; the
+            // shutter list follows the frame rate.
             getAndApply("/camera/power");
+            getAndApply("/system/format");
+            getAndApply("/video/supportedShutters");
         }
         if (s_failures >= MAX_FAILURES) {
             ESP_LOGW(TAG, "camera stopped answering; reconnecting");
@@ -689,6 +753,7 @@ RemoteCommand cameraHandleKey(RemoteModel& model, RemoteKey key, bool big) {
         case RemoteCmd::SetIso: s_holds.iso = now; break;
         case RemoteCmd::SetWb: s_holds.wb = now; break;
         case RemoteCmd::SetTint: s_holds.tint = now; break;
+        case RemoteCmd::SetShutter: s_holds.shutter = now; break;
         case RemoteCmd::SetCleanFeed:
             if (c.display >= 0 && c.display < (int)CAM_MAX_DISPLAYS) s_holds.feed[c.display] = now;
             break;

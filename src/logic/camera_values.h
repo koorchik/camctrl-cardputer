@@ -11,6 +11,8 @@ constexpr size_t CAM_NAME_MAX = 40;
 constexpr size_t CAM_MAX_ISOS = 40;
 constexpr size_t CAM_MAX_DISPLAYS = 4;
 constexpr size_t CAM_DISPLAY_NAME_MAX = 20;
+constexpr size_t CAM_MAX_SHUTTERS = 24;
+constexpr size_t CAM_MAX_FLICKER_FREE = 6;
 
 struct CameraValues {
     bool connected = false;
@@ -32,6 +34,37 @@ struct CameraValues {
     int iso = 0;
     int isoList[CAM_MAX_ISOS] = {};
     size_t isoCount = 0;
+
+    // /video/shutter: a speed (1/x s) or an angle (hundredths of a degree),
+    // depending on the camera's measurement setting.
+    bool shutterKnown = false;
+    bool shutterAngleMode = false;
+    bool shutterAuto = false;  // continuousShutterAutoExposure
+    int shutterSpeed = 0;
+    int shutterAngle = 0;
+    int shutterSpeeds[CAM_MAX_SHUTTERS] = {};
+    size_t shutterSpeedCount = 0;
+    int shutterAngles[CAM_MAX_SHUTTERS] = {};
+    size_t shutterAngleCount = 0;
+    int flickerSpeeds[CAM_MAX_FLICKER_FREE] = {};
+    size_t flickerSpeedCount = 0;
+    int flickerAngles[CAM_MAX_FLICKER_FREE] = {};
+    size_t flickerAngleCount = 0;
+    float frameRate = 0.0f;  // /system/format, 0 = unknown
+
+    // The list for the current measurement mode.
+    const int* shutterList() const { return shutterAngleMode ? shutterAngles : shutterSpeeds; }
+    size_t shutterListCount() const { return shutterAngleMode ? shutterAngleCount : shutterSpeedCount; }
+    int shutterValue() const { return shutterAngleMode ? shutterAngle : shutterSpeed; }
+    // True if `value` (in the current mode) is flicker-free.
+    bool isFlickerFree(int value) const {
+        const int* l = shutterAngleMode ? flickerAngles : flickerSpeeds;
+        const size_t n = shutterAngleMode ? flickerAngleCount : flickerSpeedCount;
+        for (size_t i = 0; i < n; ++i) {
+            if (l[i] == value) return true;
+        }
+        return false;
+    }
 
     bool wbKnown = false;
     int wb = 0;

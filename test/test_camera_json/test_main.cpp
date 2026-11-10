@@ -52,6 +52,40 @@ void test_video(void) {
     TEST_ASSERT_EQUAL(-50, v.tintMin);
 }
 
+void test_shutter(void) {
+    CameraValues v;
+    TEST_ASSERT_TRUE(apply(v, "/video/shutter", "{\"continuousShutterAutoExposure\":false,\"shutterSpeed\":125}"));
+    TEST_ASSERT_TRUE(v.shutterKnown);
+    TEST_ASSERT_FALSE(v.shutterAngleMode);
+    TEST_ASSERT_FALSE(v.shutterAuto);
+    TEST_ASSERT_EQUAL(125, v.shutterSpeed);
+    TEST_ASSERT_TRUE(apply(v, "/video/supportedShutters",
+        "{\"shutterAngles\":[1125,1500,18000,36000],\"shutterSpeeds\":[60,100,125,2000]}"));
+    TEST_ASSERT_EQUAL_size_t(4, v.shutterSpeedCount);
+    TEST_ASSERT_EQUAL(2000, v.shutterSpeeds[3]);
+    TEST_ASSERT_EQUAL_size_t(4, v.shutterAngleCount);
+    TEST_ASSERT_EQUAL(36000, v.shutterAngles[3]);
+    TEST_ASSERT_TRUE(apply(v, "/video/flickerFreeShutters",
+        "{\"shutterAngles\":[9000,18000,36000],\"shutterSpeeds\":[240,120,60]}"));
+    TEST_ASSERT_EQUAL_size_t(3, v.flickerSpeedCount);
+    TEST_ASSERT_EQUAL(60, v.flickerSpeeds[0]);  // sorted
+    TEST_ASSERT_TRUE(v.isFlickerFree(60));
+    TEST_ASSERT_FALSE(v.isFlickerFree(125));
+    // Angle mode: hundredths of a degree.
+    TEST_ASSERT_TRUE(apply(v, "/video/shutter", "{\"shutterAngle\":18000,\"continuousShutterAutoExposure\":true}"));
+    TEST_ASSERT_TRUE(v.shutterAngleMode);
+    TEST_ASSERT_TRUE(v.shutterAuto);
+    TEST_ASSERT_EQUAL(18000, v.shutterAngle);
+    TEST_ASSERT_TRUE(v.isFlickerFree(18000));
+    TEST_ASSERT_TRUE(apply(v, "/video/shutter/measurement", "{\"measurement\":\"ShutterSpeed\"}"));
+    TEST_ASSERT_FALSE(v.shutterAngleMode);
+    TEST_ASSERT_TRUE(apply(v, "/system/format", "{\"codec\":\"BRaw:8_1\",\"frameRate\":\"23.98\"}"));
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 23.98f, v.frameRate);
+    char buf[768];
+    cameraSubscribeMessage(v, buf, sizeof(buf));
+    TEST_ASSERT_NOT_NULL(strstr(buf, "/video/shutter"));
+}
+
 void test_missing_keys_keep_values(void) {
     CameraValues v;
     apply(v, "/video/iso", "{\"iso\": 800}");
@@ -90,8 +124,13 @@ void test_product_name(void) {
 void test_garbage_and_unknown_paths(void) {
     CameraValues v;
     TEST_ASSERT_FALSE(apply(v, "/video/iso", "not json"));
-    TEST_ASSERT_FALSE(apply(v, "/video/shutter", "{\"shutterSpeed\":50}"));
+    TEST_ASSERT_FALSE(apply(v, "/video/gain", "{\"gain\":6}"));  // not used by the remote
     TEST_ASSERT_FALSE(apply(v, "/monitoring/a/b/cleanFeed", "{\"enabled\":true}"));
+    // Polled paths carry the percent-encoded name.
+    TEST_ASSERT_TRUE(apply(v, "/monitoring/display", "[\"LCD 1/A\"]"));
+    TEST_ASSERT_TRUE(apply(v, "/monitoring/LCD%201%2FA/cleanFeed", "{\"enabled\":true}"));
+    TEST_ASSERT_TRUE(v.cleanFeedKnown[0]);
+    TEST_ASSERT_TRUE(v.cleanFeed[0]);
 }
 
 void test_ws_messages(void) {
@@ -172,6 +211,7 @@ int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_lens);
     RUN_TEST(test_video);
+    RUN_TEST(test_shutter);
     RUN_TEST(test_missing_keys_keep_values);
     RUN_TEST(test_displays_and_clean_feed);
     RUN_TEST(test_product_name);

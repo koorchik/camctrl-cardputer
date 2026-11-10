@@ -24,6 +24,14 @@ static CameraValues camera() {
     v.wb = 5600;
     v.tintKnown = true;
     v.tint = 0;
+    v.shutterKnown = true;
+    v.shutterSpeed = 125;
+    const int speeds[] = {60, 100, 125, 200, 250, 500, 1000, 2000};
+    memcpy(v.shutterSpeeds, speeds, sizeof(speeds));
+    v.shutterSpeedCount = 8;
+    const int angles[] = {4500, 9000, 18000, 27000, 36000};
+    memcpy(v.shutterAngles, angles, sizeof(angles));
+    v.shutterAngleCount = 5;
     v.displayCount = 2;
     strcpy(v.displays[0], "MainSDI");
     strcpy(v.displays[1], "HDMI");
@@ -44,8 +52,9 @@ void test_key_mapping(void) {
 }
 
 void test_grid_navigation(void) {
-    // Two columns: Focus Iris Iso | Wb Tint Feed. Up/Down stay in a column,
-    // ColLeft/ColRight keep the row; edges stop.
+    // Two columns: Focus Iris Shutter | Iso Wb Feed. Up/Down stay in a
+    // column, ColLeft/ColRight keep the row; edges stop. Tint has no tile:
+    // it moves like Wb.
     RemoteModel m;
     CameraValues v = camera();
     m.onKey(RemoteKey::Up, false, v);
@@ -53,19 +62,51 @@ void test_grid_navigation(void) {
     m.onKey(RemoteKey::Down, false, v);
     m.onKey(RemoteKey::Down, false, v);
     m.onKey(RemoteKey::Down, false, v);
-    TEST_ASSERT_EQUAL(RemoteRow::Iso, m.row());
+    TEST_ASSERT_EQUAL(RemoteRow::Shutter, m.row());
     m.onKey(RemoteKey::ColRight, false, v);
     TEST_ASSERT_EQUAL(RemoteRow::Feed, m.row());
     m.onKey(RemoteKey::ColRight, false, v);
     TEST_ASSERT_EQUAL(RemoteRow::Feed, m.row());
     m.onKey(RemoteKey::Up, false, v);
-    TEST_ASSERT_EQUAL(RemoteRow::Tint, m.row());
-    m.onKey(RemoteKey::ColLeft, false, v);
-    TEST_ASSERT_EQUAL(RemoteRow::Iris, m.row());
+    TEST_ASSERT_EQUAL(RemoteRow::Wb, m.row());
     m.onKey(RemoteKey::ColLeft, false, v);
     TEST_ASSERT_EQUAL(RemoteRow::Iris, m.row());
     m.onKey(RemoteKey::JumpTint, false, v);
     TEST_ASSERT_EQUAL(RemoteRow::Tint, m.row());
+    TEST_ASSERT_EQUAL(RemoteRow::Wb, remoteTileRow(m.row()));
+    m.onKey(RemoteKey::Down, false, v);
+    TEST_ASSERT_EQUAL(RemoteRow::Feed, m.row());
+    m.onKey(RemoteKey::JumpShutter, false, v);
+    TEST_ASSERT_EQUAL(RemoteRow::Shutter, m.row());
+    TEST_ASSERT_EQUAL(RemoteKey::JumpShutter, remoteKeyFor({KeyCode::Char, 's'}));
+}
+
+void test_shutter_steps_through_the_list(void) {
+    RemoteModel m;
+    CameraValues v = camera();
+    m.onKey(RemoteKey::JumpShutter, false, v);
+    RemoteCommand c = m.onKey(RemoteKey::Right, false, v);
+    TEST_ASSERT_EQUAL(RemoteCmd::SetShutter, c.type);
+    TEST_ASSERT_EQUAL(200, c.i);
+    TEST_ASSERT_FALSE(c.b);
+    TEST_ASSERT_EQUAL(200, v.shutterSpeed);
+    c = m.onKey(RemoteKey::Right, true, v);  // big: three entries
+    TEST_ASSERT_EQUAL(1000, c.i);
+    c = m.onKey(RemoteKey::Right, true, v);
+    TEST_ASSERT_EQUAL(2000, c.i);
+    c = m.onKey(RemoteKey::Right, false, v);
+    TEST_ASSERT_EQUAL(RemoteCmd::None, c.type);
+    TEST_ASSERT_TRUE(m.limitHit());
+    // Angle mode steps through the angles.
+    v.shutterAngleMode = true;
+    v.shutterAngle = 18000;
+    c = m.onKey(RemoteKey::Left, false, v);
+    TEST_ASSERT_EQUAL(9000, c.i);
+    TEST_ASSERT_TRUE(c.b);
+    TEST_ASSERT_EQUAL(9000, v.shutterAngle);
+    // Auto exposure owns the shutter: nothing is sent.
+    v.shutterAuto = true;
+    TEST_ASSERT_EQUAL(RemoteCmd::None, m.onKey(RemoteKey::Right, false, v).type);
 }
 
 void test_focus_steps_and_clamps(void) {
@@ -204,6 +245,18 @@ void test_formatting(void) {
     TEST_ASSERT_EQUAL_STRING("f/16 A", s);
     formatWb(v, s, sizeof(s));
     TEST_ASSERT_EQUAL_STRING("5600K", s);
+    formatShutter(v, s, sizeof(s));
+    TEST_ASSERT_EQUAL_STRING("1/125", s);
+    v.shutterAngleMode = true;
+    v.shutterAngle = 17280;
+    formatShutter(v, s, sizeof(s));
+    TEST_ASSERT_EQUAL_STRING("172.8", s);  // the UI adds the degree sign
+    v.shutterAngle = 1125;
+    formatShutter(v, s, sizeof(s));
+    TEST_ASSERT_EQUAL_STRING("11.25", s);
+    v.shutterAngle = 18000;
+    formatShutter(v, s, sizeof(s));
+    TEST_ASSERT_EQUAL_STRING("180", s);
     v.tint = 5;
     formatTint(v, s, sizeof(s));
     TEST_ASSERT_EQUAL_STRING("+5", s);
@@ -248,6 +301,7 @@ int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_key_mapping);
     RUN_TEST(test_grid_navigation);
+    RUN_TEST(test_shutter_steps_through_the_list);
     RUN_TEST(test_focus_steps_and_clamps);
     RUN_TEST(test_autofocus_from_space_and_enter);
     RUN_TEST(test_iris_sends_steps_without_guessing_the_value);

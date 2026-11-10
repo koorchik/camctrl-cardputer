@@ -83,9 +83,13 @@ void test_repeater(void) {
 }
 
 void test_repeater_caps_burst_after_a_stall(void) {
+    // After a stall (e.g. the main loop blocked) a held key must not fire a
+    // burst of steps: at most two, then the schedule restarts from now.
     KeyRepeater r(300, 100, 100);
     r.press(0);
-    TEST_ASSERT_EQUAL_UINT32(8, r.poll(60000));
+    TEST_ASSERT_EQUAL_UINT32(2, r.poll(60000));
+    TEST_ASSERT_EQUAL_UINT32(0, r.poll(60050));
+    TEST_ASSERT_EQUAL_UINT32(1, r.poll(60100));
 }
 
 int main(int, char**) {

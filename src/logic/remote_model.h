@@ -10,8 +10,14 @@
 // selection or the shown values right away (optimistic) and yield a command
 // for the camera client to send.
 
-enum class RemoteRow : uint8_t { Focus, Iris, Iso, Wb, Tint, Feed, Count };
+// The first six are the overview tiles (2 x 3 grid: Focus Iris Shutter |
+// Iso Wb Feed). Tint has no tile: it belongs to white balance (key t).
+enum class RemoteRow : uint8_t { Focus, Iris, Shutter, Iso, Wb, Feed, Tint, Count };
 constexpr int REMOTE_ROWS = (int)RemoteRow::Count;
+constexpr int REMOTE_TILES = 6;
+
+// The tile that shows `r` (Tint -> Wb).
+inline RemoteRow remoteTileRow(RemoteRow r) { return r == RemoteRow::Tint ? RemoteRow::Wb : r; }
 
 enum class RemoteCmd : uint8_t {
     None,
@@ -23,6 +29,7 @@ enum class RemoteCmd : uint8_t {
     AutoWb,
     SetTint,      // i = tint
     SetCleanFeed, // display, b = enabled
+    SetShutter,   // i = speed (1/x) or angle (1/100 degree), b = angle
 };
 
 struct RemoteCommand {
@@ -36,7 +43,8 @@ struct RemoteCommand {
 // What the key means to the remote (after layout lookup).
 enum class RemoteKey : uint8_t {
     None, Up, Down, Left, Right, Enter, AutoFocus, Help, Back,
-    JumpFocus, JumpIris, JumpIso, JumpWb, JumpTint, JumpFeed,
+    // Jumps, in RemoteRow order (JumpFocus + row).
+    JumpFocus, JumpIris, JumpShutter, JumpIso, JumpWb, JumpFeed, JumpTint,
     // Overview grid moves (from UiNav, no key of their own).
     ColLeft, ColRight,
 };
@@ -56,6 +64,7 @@ constexpr int ISO_BIG_STEP = 3;
 constexpr int WB_STEP = 50;
 constexpr int WB_BIG_STEP = 500;
 constexpr int TINT_BIG_STEP = 10;
+constexpr int SHUTTER_BIG_STEP = 3;
 
 class RemoteModel {
 public:
@@ -90,5 +99,7 @@ void formatIris(const CameraValues& v, char* out, size_t cap);
 void formatIso(const CameraValues& v, char* out, size_t cap);
 void formatWb(const CameraValues& v, char* out, size_t cap);
 void formatTint(const CameraValues& v, char* out, size_t cap);
+// "1/125", or an angle without the degree sign ("180", "172.8").
+void formatShutter(const CameraValues& v, char* out, size_t cap);
 // Short label for a monitoring display: MainSDI -> SDI, FrontUSBC -> USB.
 void shortDisplayName(const char* name, char* out, size_t cap);

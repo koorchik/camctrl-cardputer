@@ -18,7 +18,9 @@
 #include "esp_system.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
+#include "esp_http_server.h"
 #include "hw/keyboard.h"
 #include "log_buffer.h"
 #include "logic/boot_guard.h"
@@ -33,6 +35,23 @@
 #include "web.h"
 
 namespace {
+// Screenshots (/api/screen): the web task asks, the main loop draws a frame
+// band by band and waits while the web task sends each band.
+SemaphoreHandle_t s_capRequest = nullptr;
+SemaphoreHandle_t s_capBand = nullptr;
+SemaphoreHandle_t s_capSent = nullptr;
+SemaphoreHandle_t s_capOne = nullptr;  // one capture at a time
+const uint8_t* s_capPixels = nullptr;
+int s_capRows = 0;
+QueueHandle_t s_keyQueue = nullptr;  // for /api/key
+
+void captureSink(const uint8_t* pixels, int, int rows, void*) {
+    s_capPixels = pixels;
+    s_capRows = rows;
+    xSemaphoreGive(s_capBand);
+    xSemaphoreTake(s_capSent, pdMS_TO_TICKS(2000));  // the web task sent it (or gave up)
+}
+
 const char* TAG = "main";
 constexpr int64_t OTA_CONFIRM_MS = 30000;
 // A fresh OTA image that has not confirmed itself by then restarts, so the
@@ -186,7 +205,7 @@ private:
                     break;
             }
             if (mk == RemoteKey::Up || mk == RemoteKey::Down || mk == RemoteKey::ColLeft ||
-                mk == RemoteKey::ColRight || (mk >= RemoteKey::JumpFocus && mk <= RemoteKey::JumpFeed)) {
+                mk == RemoteKey::ColRight || (mk >= RemoteKey::JumpFocus && mk <= RemoteKey::JumpTint)) {
                 hints_.onNavigate();
             }
         }
@@ -216,6 +235,57 @@ private:
 };
 }  // namespace
 
+extern "C" esp_err_t webScreenCapture(httpd_req_t* req) {
+    if (!s_capRequest) return httpd_resp_send_404(req);
+    if (xSemaphoreTake(s_capOne, pdMS_TO_TICKS(3000)) != pdTRUE) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "busy");
+        return ESP_FAIL;
+    }
+    xSemaphoreTake(s_capBand, 0);  // drop anything left from an aborted capture
+    xSemaphoreTake(s_capSent, 0);
+    xSemaphoreGive(s_capRequest);
+    httpd_resp_set_type(req, "application/octet-stream");
+    esp_err_t err = ESP_OK;
+    int rows = 0;
+    while (rows < 135) {
+        if (xSemaphoreTake(s_capBand, pdMS_TO_TICKS(3000)) != pdTRUE) {
+            err = ESP_FAIL;
+            break;
+        }
+        if (err == ESP_OK) {
+            err = httpd_resp_send_chunk(req, reinterpret_cast<const char*>(s_capPixels), s_capRows * 240 * 2);
+        }
+        rows += s_capRows;
+        xSemaphoreGive(s_capSent);
+    }
+    if (err == ESP_OK) err = httpd_resp_send_chunk(req, nullptr, 0);
+    xSemaphoreGive(s_capOne);
+    return err;
+}
+
+// Key names for /api/key: up down left right enter space back h f i s o w t c.
+extern "C" bool webInjectKey(const char* name) {
+    if (!s_keyQueue || !name) return false;
+    static const struct {
+        const char* name;
+        Key key;
+    } kKeys[] = {
+        {"up", {KeyCode::Char, ';'}},    {"down", {KeyCode::Char, '.'}},  {"left", {KeyCode::Char, ','}},
+        {"right", {KeyCode::Char, '/'}}, {"enter", {KeyCode::Enter, 0}},  {"space", {KeyCode::Char, ' '}},
+        {"back", {KeyCode::Backspace, 0}}, {"h", {KeyCode::Char, 'h'}},  {"f", {KeyCode::Char, 'f'}},
+        {"i", {KeyCode::Char, 'i'}},     {"s", {KeyCode::Char, 's'}},     {"o", {KeyCode::Char, 'o'}},     {"w", {KeyCode::Char, 'w'}},
+        {"t", {KeyCode::Char, 't'}},     {"c", {KeyCode::Char, 'c'}},
+    };
+    for (const auto& k : kKeys) {
+        if (strcmp(k.name, name) != 0) continue;
+        // Row/col outside the matrix: never matches a physical key's release.
+        KeyEvent press{k.key, true, 0xFE, 0xFE};
+        KeyEvent release{k.key, false, 0xFE, 0xFE};
+        return xQueueSend(s_keyQueue, &press, 0) == pdTRUE && xQueueSend(s_keyQueue, &release, 0) == pdTRUE;
+    }
+    return false;
+}
+
 extern "C" void app_main(void) {
     logBufferInit();
     const bool safe = bootModeIsSafe();
@@ -239,6 +309,11 @@ extern "C" void app_main(void) {
     webStart(settings);
     cameraClientStart();
     QueueHandle_t keyboard = keyboardStart();
+    s_keyQueue = keyboard;
+    s_capBand = xSemaphoreCreateBinary();
+    s_capSent = xSemaphoreCreateBinary();
+    s_capOne = xSemaphoreCreateMutex();
+    s_capRequest = xSemaphoreCreateBinary();  // last: webScreenCapture checks it
     ESP_LOGI(TAG, "heap after camera+keyboard: %lu free, %lu largest", (unsigned long)esp_get_free_heap_size(), (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
 
     // Large objects live outside the main task's stack.
@@ -278,8 +353,10 @@ extern "C" void app_main(void) {
         // allocate a frame, so the largest block counts too.
         if (esp_get_free_heap_size() < LOW_HEAP_BYTES ||
             heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) < 4096) {
-            if (!lowHeapSince) lowHeapSince = now ? now : 1;
-            if ((int64_t)now - lowHeapSince >= LOW_HEAP_MS) {
+            // 64-bit milliseconds: the 32-bit clock wraps after 49 days.
+            const int64_t nowMs64 = esp_timer_get_time() / 1000;
+            if (!lowHeapSince) lowHeapSince = nowMs64 ? nowMs64 : 1;
+            if (nowMs64 - lowHeapSince >= LOW_HEAP_MS) {
                 ESP_LOGE(TAG, "free heap stayed below %u bytes; restarting", (unsigned)LOW_HEAP_BYTES);
                 vTaskDelay(pdMS_TO_TICKS(200));
                 esp_restart();
@@ -341,6 +418,7 @@ extern "C" void app_main(void) {
             everShown = true;
             lastDraw = now;
         }
+        if (xSemaphoreTake(s_capRequest, 0) == pdTRUE) uiCapture(ui, captureSink, nullptr);
         vTaskDelay(pdMS_TO_TICKS(10));
     }
 }

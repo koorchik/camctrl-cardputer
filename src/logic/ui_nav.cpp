@@ -2,8 +2,7 @@
 
 namespace {
 bool isJump(RemoteKey k) {
-    return k == RemoteKey::JumpFocus || k == RemoteKey::JumpIris || k == RemoteKey::JumpIso ||
-           k == RemoteKey::JumpWb || k == RemoteKey::JumpTint || k == RemoteKey::JumpFeed;
+    return k >= RemoteKey::JumpFocus && k <= RemoteKey::JumpTint;
 }
 }  // namespace
 

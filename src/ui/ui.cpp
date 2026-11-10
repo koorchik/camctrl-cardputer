@@ -1,3 +1,4 @@
+#include "esp_app_desc.h"
 #include "ui/ui.h"
 
 #include <cmath>
@@ -91,6 +92,7 @@ struct Anim {
     float focusDisp = -1000;  // 0..100
     float irisDisp = -1000;   // f-stop
     float isoIdxDisp = -1000;
+    float shutterIdxDisp = -1000;
     float wbDisp = -1000;
     float tintDisp = -1000;
     float selX = -1000, selY = -1000;
@@ -136,17 +138,17 @@ bool blink(uint32_t now, uint32_t period) {
 }
 
 const char* rowLabel(RemoteRow r) {
-    static const char* const labels[] = {"FOCUS", "IRIS", "ISO", "WB", "TINT", "CLEAN FEED"};
+    static const char* const labels[] = {"FOCUS", "IRIS", "SHUTTER", "ISO", "WB", "CLEAN FEED", "TINT"};
     return labels[(int)r];
 }
 
 const char* rowTitle(RemoteRow r) {
-    static const char* const titles[] = {"FOCUS", "IRIS", "ISO", "WHITE BALANCE", "TINT", "CLEAN FEED"};
+    static const char* const titles[] = {"FOCUS", "IRIS", "SHUTTER", "ISO", "WHITE BALANCE", "CLEAN FEED", "TINT"};
     return titles[(int)r];
 }
 
 char jumpLetter(RemoteRow r) {
-    static const char letters[] = {'f', 'i', 'o', 'w', 't', 'c'};
+    static const char letters[] = {'f', 'i', 's', 'o', 'w', 'c', 't'};
     return letters[(int)r];
 }
 
@@ -158,6 +160,7 @@ bool rowPending(const CameraView& cv, RemoteRow r) {
         case RemoteRow::Focus: return s.focusKnown && fabsf(s.focus - a.focus) > 0.01f;
         case RemoteRow::Iris: return cv.irisQueued != 0;
         case RemoteRow::Iso: return s.isoKnown && s.iso != a.iso;
+        case RemoteRow::Shutter: return s.shutterKnown && s.shutterValue() != a.shutterValue();
         case RemoteRow::Wb: return s.wbKnown && s.wb != a.wb;
         case RemoteRow::Tint: return s.tintKnown && s.tint != a.tint;
         case RemoteRow::Feed:
@@ -173,6 +176,7 @@ bool rowUnavailable(const CameraValues& v, RemoteRow r) {
     switch (r) {
         case RemoteRow::Focus: return !v.focusControllable;
         case RemoteRow::Iris: return !v.irisControllable || v.irisAuto || (v.irisKnown && v.irisStop <= 0);
+        case RemoteRow::Shutter: return v.shutterAuto;
         default: return false;
     }
 }
@@ -182,6 +186,7 @@ bool rowKnown(const CameraValues& v, RemoteRow r) {
         case RemoteRow::Focus: return v.focusKnown;
         case RemoteRow::Iris: return v.irisKnown && v.irisStop > 0;
         case RemoteRow::Iso: return v.isoKnown;
+        case RemoteRow::Shutter: return v.shutterKnown;
         case RemoteRow::Wb: return v.wbKnown;
         case RemoteRow::Tint: return v.tintKnown;
         case RemoteRow::Feed: return v.displayCount > 0;
@@ -193,7 +198,9 @@ bool rowKnown(const CameraValues& v, RemoteRow r) {
 uint16_t valueColor(const UiState& s, RemoteRow r) {
     const CameraValues& v = s.cam.shown;
     if (!rowKnown(v, r)) return TEXT_3;
-    if (rowUnavailable(v, r)) return (r == RemoteRow::Iris && v.irisAuto) ? TEXT_2 : TEXT_3;
+    if (rowUnavailable(v, r)) {
+        return ((r == RemoteRow::Iris && v.irisAuto) || (r == RemoteRow::Shutter && v.shutterAuto)) ? TEXT_2 : TEXT_3;
+    }
     if (rowPending(s.cam, r)) return ACCENT;
     const float ext = flashT(s.nowMs, A.externalAt[(int)r], 400);
     if (ext < 1) return blend(INFO, TEXT, ext);
@@ -432,11 +439,12 @@ void drawStatusBar(const UiState& s, bool camera) {
         snprintf(name, sizeof(name), "CamCtrl");
     }
     s_c->setTextColor(camera ? TEXT_2 : TEXT);
-    if (rx - 2 > x) {
-        s_c->setClipRect(x, 0, rx - 2 - x, STATUS_H);
-        s_c->drawString(name, x + 1, 9);
-        s_c->clearClipRect();
-    }
+    // Drop whole characters (and a trailing space) until the name fits.
+    const int avail = rx - 3 - x;
+    size_t len = strlen(name);
+    while (len > 0 && s_c->textWidth(name) > avail) name[--len] = '\0';
+    while (len > 0 && name[len - 1] == ' ') name[--len] = '\0';
+    if (len > 0) s_c->drawString(name, x + 1, 9);
 }
 
 void drawBanner(const UiState& s) {
@@ -478,7 +486,7 @@ void drawTallyBorder(const UiState& s) {
 struct TilePos {
     int x, y;
 };
-constexpr TilePos kTiles[REMOTE_ROWS] = {{3, 15}, {3, 51}, {3, 87}, {122, 15}, {122, 51}, {122, 87}};
+constexpr TilePos kTiles[REMOTE_TILES] = {{3, 15}, {3, 51}, {3, 87}, {122, 15}, {122, 51}, {122, 87}};
 constexpr int TILE_W = 115;
 constexpr int TILE_H = 33;
 
@@ -537,6 +545,7 @@ void tileValueText(const CameraValues& v, RemoteRow r, char* val, size_t cap) {
             break;
         }
         case RemoteRow::Iso: snprintf(val, cap, "%d", v.iso); break;
+        case RemoteRow::Shutter: formatShutter(v, val, cap); break;
         case RemoteRow::Wb: snprintf(val, cap, "%dK", v.wb); break;
         case RemoteRow::Tint:
             if (v.tint == 0) {
@@ -552,7 +561,7 @@ void tileValueText(const CameraValues& v, RemoteRow r, char* val, size_t cap) {
 void drawTile(const UiState& s, RemoteRow r) {
     const CameraValues& v = s.cam.shown;
     const int tx = kTiles[(int)r].x, ty = kTiles[(int)r].y;
-    const bool sel = s.row == r;
+    const bool sel = remoteTileRow(s.row) == r;
     s_c->fillRoundRect(tx, ty, TILE_W, TILE_H, 4, sel ? PANEL_HI : PANEL);
     const float ext = flashT(s.nowMs, A.externalAt[(int)r], 600);
     if (!sel && ext < 1) s_c->drawRoundRect(tx, ty, TILE_W, TILE_H, 4, blend(INFO, PANEL, ext));
@@ -577,6 +586,8 @@ void drawTile(const UiState& s, RemoteRow r) {
         drawChip(tx + 110, ty + 2, "AUTO", INFO, false);
     } else if (r == RemoteRow::Iris && !v.irisControllable) {
         drawPadlock(tx + 100, ty + 2, WARN);
+    } else if (r == RemoteRow::Shutter && v.shutterAuto) {
+        drawChip(tx + 110, ty + 2, "AUTO", INFO, false);
     }
 
     if (r == RemoteRow::Feed) {
@@ -608,7 +619,9 @@ void drawTile(const UiState& s, RemoteRow r) {
     s_c->setTextDatum(textdatum_t::baseline_right);
     const int shake = sel ? shakeOffset(s.nowMs, s.unavailableAt) + shakeOffset(s.nowMs, s.cam.failedAt) : 0;
     s_c->setTextColor(sel && within(s.nowMs, s.cam.failedAt, 300) ? ERR : valueColor(s, r));
-    s_c->drawString(val, tx + 109 + shake, ty + 26);
+    const bool degrees = r == RemoteRow::Shutter && v.shutterKnown && v.shutterAngleMode;
+    s_c->drawString(val, tx + 109 + shake - (degrees ? 7 : 0), ty + 26);
+    if (degrees) s_c->drawCircle(tx + 106 + shake, ty + 11, 2, valueColor(s, r));
 
     if (!rowKnown(v, r)) return;
     const int x0 = tx + 6, y0 = ty + 29;
@@ -636,9 +649,31 @@ void drawTile(const UiState& s, RemoteRow r) {
             if (n) s_c->fillRect(x0 + (int)(cur * pitch) - 1, ty + 28, 3, 4, TEXT);
             break;
         }
+        case RemoteRow::Shutter: {
+            const int n = (int)v.shutterListCount();
+            const int* list = v.shutterList();
+            int cur = 0;
+            for (int i = 0; i < n; ++i) {
+                if (abs(list[i] - v.shutterValue()) < abs(list[cur] - v.shutterValue())) cur = i;
+            }
+            const float pitch = n > 1 ? 102.0f / (n - 1) : 0;
+            for (int i = 0; i < n; ++i) s_c->fillRect(x0 + (int)(i * pitch), y0, 1, 2, track);
+            if (n) s_c->fillRect(x0 + (int)(cur * pitch) - 1, ty + 28, 3, 4, TEXT);
+            break;
+        }
         case RemoteRow::Wb: {
-            for (int i = 0; i < 103; ++i) s_c->drawFastVLine(x0 + i, y0, 2, kelvinLut[i * (LUT_W - 1) / 102]);
-            const int mx = x0 + (int)((v.wb - 2500) * 102.0f / 7500.0f);
+            // Kelvin gauge on the left, tint (key t) on the right of the same line.
+            const int gw = v.tintKnown ? 52 : 103;
+            for (int i = 0; i < gw; ++i) s_c->drawFastVLine(x0 + i, y0, 2, kelvinLut[i * (LUT_W - 1) / (gw - 1)]);
+            if (v.tintKnown) {
+                char t[16];
+                snprintf(t, sizeof(t), v.tint ? "tint %+d" : "tint 0", v.tint);
+                s_c->setFont(F0);
+                s_c->setTextDatum(textdatum_t::top_right);
+                s_c->setTextColor(s.row == RemoteRow::Tint ? ACCENT : TEXT_2);
+                s_c->drawString(t, tx + 110, ty + 27);
+            }
+            const int mx = x0 + (int)((v.wb - 2500) * (gw - 1.0f) / 7500.0f);
             s_c->fillRect(mx - 2, ty + 28, 5, 4, BG);
             s_c->fillRect(mx - 1, ty + 28, 3, 4, TEXT);
             break;
@@ -655,8 +690,8 @@ void drawTile(const UiState& s, RemoteRow r) {
 }
 
 void drawOverview(const UiState& s, float dt) {
-    for (int i = 0; i < REMOTE_ROWS; ++i) drawTile(s, (RemoteRow)i);
-    const TilePos& t = kTiles[(int)s.row];
+    for (int i = 0; i < REMOTE_TILES; ++i) drawTile(s, (RemoteRow)i);
+    const TilePos& t = kTiles[(int)remoteTileRow(s.row)];
     A.selX = ease(A.selX, (float)t.x, dt, 30, 0.25f);
     A.selY = ease(A.selY, (float)t.y, dt, 30, 0.25f);
     const int fx = (int)lroundf(A.selX), fy = (int)lroundf(A.selY);
@@ -1039,6 +1074,129 @@ void drawLutBar(const uint16_t* lut, int x, int y, int w, int h, float dim) {
     }
 }
 
+// "1/125" or "172.8" (degrees are drawn as a small circle by the caller).
+void shutterText(int value, bool angle, char* out, size_t cap) {
+    if (!angle) {
+        snprintf(out, cap, "1/%d", value);
+    } else if (value % 100 == 0) {
+        snprintf(out, cap, "%d", value / 100);
+    } else if (value % 10 == 0) {
+        snprintf(out, cap, "%d.%d", value / 100, (value / 10) % 10);
+    } else {
+        snprintf(out, cap, "%d.%02d", value / 100, value % 100);
+    }
+}
+
+// Rotary shutter: the open sector (light) is the shutter angle.
+void drawShutterDisc(int cx, int cy, int r, float angleDeg) {
+    s_c->fillCircle(cx, cy, r, BLADE);
+    if (angleDeg > 0) {
+        const float a = angleDeg >= 360 ? 359.9f : angleDeg;
+        s_c->fillArc(cx, cy, r - 1, 0, 270 - a / 2, 270 + a / 2, LIGHT);
+    }
+    s_c->drawCircle(cx, cy, r, TEXT_3);
+    s_c->fillCircle(cx, cy, 2, TEXT_3);
+}
+
+void drawShutterDetail(const UiState& s, float dt) {
+    const CameraValues& v = s.cam.shown;
+    detailTitle(s);
+    const int n = (int)v.shutterListCount();
+    const int* list = v.shutterList();
+    const bool angle = v.shutterAngleMode;
+    int idx = 0;
+    for (int i = 1; i < n; ++i) {
+        if (abs(list[i] - v.shutterValue()) < abs(list[idx] - v.shutterValue())) idx = i;
+    }
+    int cx = stepChip(s, 234, "3 STEPS");
+    if (v.shutterAuto) {
+        cx = drawChip(cx, 18, "AUTO", INFO, false) - 4;
+    } else if (v.shutterKnown && v.isFlickerFree(v.shutterValue())) {
+        cx = drawChip(cx, 18, "NO FLICKER", OK, false) - 4;
+    }
+    if (!v.shutterKnown || !n) {
+        char t[16] = "--";
+        if (v.shutterKnown) shutterText(v.shutterValue(), angle, t, sizeof(t));
+        drawHero(s, nullptr, t, nullptr, valueColor(s, RemoteRow::Shutter));
+    } else {
+        // Drum of the supported values, the current one in a window.
+        A.shutterIdxDisp = ease(A.shutterIdxDisp, (float)idx, dt, 45, 0.005f);
+        const bool flash = within(s.nowMs, s.limitHitAt, 300);
+        if (flash) A.active = true;
+        s_c->fillRoundRect(58, 34, 124, 44, 5, PANEL_HI);
+        s_c->setClipRect(3, 32, 234, 48);
+        s_c->setTextDatum(textdatum_t::middle_center);
+        for (int i = 0; i < n; ++i) {
+            const float x = 120 + (i - A.shutterIdxDisp) * 100;
+            if (fabsf(x - 120) >= 170) continue;
+            char t[16];
+            shutterText(list[i], angle, t, sizeof(t));
+            uint16_t c;
+            if (i == idx) {
+                s_c->setFont(B18);
+                c = valueColor(s, RemoteRow::Shutter);
+            } else {
+                s_c->setFont(R9);
+                c = blend(TEXT_2, TEXT_3, fminf(1, fabsf(x - 120) / 100.0f));
+            }
+            s_c->setTextColor(c);
+            const int px = (int)lroundf(x) + (i == idx ? shakeOffset(s.nowMs, s.cam.failedAt) : 0);
+            s_c->drawString(t, px, 56);
+            const int half = s_c->textWidth(t) / 2;
+            if (angle) s_c->drawCircle(px + half + 4, i == idx ? 44 : 50, i == idx ? 3 : 2, c);
+            if (v.isFlickerFree(list[i])) s_c->fillCircle(px, i == idx ? 72 : 66, 2, OK);
+        }
+        s_c->clearClipRect();
+        s_c->drawRoundRect(58, 34, 124, 44, 5, flash ? WARN : ACCENT);
+        s_c->drawRoundRect(59, 35, 122, 42, 5, flash ? WARN : ACCENT);
+
+        // Exposure in the other unit, from the frame rate.
+        const float fps = v.frameRate;
+        char ex[40] = "";
+        char lead[16] = "";
+        if (fps > 0 && !angle && v.shutterSpeed > 0) {
+            snprintf(lead, sizeof(lead), "%.0f", 360.0f * fps / (float)v.shutterSpeed);  // + degree sign
+            snprintf(ex, sizeof(ex), "  at %.4g fps", fps);
+        } else if (fps > 0 && angle && v.shutterAngle > 0) {
+            snprintf(ex, sizeof(ex), "1/%.0f s at %.4g fps", fps * 36000.0f / (float)v.shutterAngle, fps);
+        }
+        s_c->setFont(F2);
+        s_c->setTextDatum(textdatum_t::top_left);
+        s_c->setTextColor(TEXT_2);
+        const int lw = s_c->textWidth(lead), ew = s_c->textWidth(ex);
+        int ex0 = 132 - (lw + ew) / 2;
+        if (lead[0]) {
+            ex0 += s_c->drawString(lead, ex0, 82);
+            s_c->drawCircle(ex0 + 3, 85, 2, TEXT_2);
+        }
+        if (ex[0]) s_c->drawString(ex, ex0, 82);
+
+        // Rotary shutter and a ruler of all values.
+        float deg = 0;
+        if (angle) deg = v.shutterAngle / 100.0f;
+        else if (fps > 0 && v.shutterSpeed > 0) deg = 360.0f * fps / (float)v.shutterSpeed;
+        drawShutterDisc(18, 96, 13, deg);
+        const int rx0 = 40, rw = 188;
+        s_c->drawFastHLine(rx0, 106, rw, LINE);
+        s_c->setFont(F0);
+        for (int i = 0; i < n; ++i) {
+            const int x = n > 1 ? rx0 + i * rw / (n - 1) : rx0 + rw / 2;
+            const bool ff = v.isFlickerFree(list[i]);
+            s_c->drawFastVLine(x, 102, 4, ff ? OK : TEXT_3);
+            if (i == 0 || i == n - 1 || i == n / 2) {
+                char t[16];
+                shutterText(list[i], angle, t, sizeof(t));
+                s_c->setTextColor(TEXT_2);
+                s_c->setTextDatum(i == 0 ? textdatum_t::top_left : (i == n - 1 ? textdatum_t::top_right : textdatum_t::top_center));
+                s_c->drawString(t, x, 109);
+            }
+        }
+        const int mx = n > 1 ? rx0 + (int)(A.shutterIdxDisp * rw / (n - 1)) : rx0 + rw / 2;
+        markerDown(mx, 105, ACCENT);
+    }
+    if (v.shutterAuto) drawHintMessage("SHUTTER SET BY AUTO EXPOSURE");
+}
+
 void drawWbDetail(const UiState& s, float dt) {
     const CameraView& cv = s.cam;
     const CameraValues& v = cv.shown;
@@ -1091,6 +1249,17 @@ void drawWbDetail(const UiState& s, float dt) {
     s_c->setTextColor(TEXT_3);
     s_c->drawString("G", 12, 110);
     s_c->drawString("M", 224, 110);
+    // Tint belongs here: say how to reach it.
+    char tint[16] = "TINT --";
+    if (v.tintKnown) snprintf(tint, sizeof(tint), v.tint ? "TINT %+d" : "TINT 0", v.tint);
+    s_c->setFont(F0);
+    const int tw = s_c->textWidth(tint);
+    const int kx = 120 - (tw + 13) / 2;
+    drawKeycap(kx, 98, "t", Arrow::None, CapStyle::Normal);
+    s_c->setFont(F0);
+    s_c->setTextDatum(textdatum_t::top_left);
+    s_c->setTextColor(TEXT_2);
+    s_c->drawString(tint, kx + 13, 100);
 
 }
 
@@ -1356,37 +1525,39 @@ void drawHelp(const UiState& s) {
         static const Arrow all[] = {Arrow::Up, Arrow::Down, Arrow::Left, Arrow::Right};
         static const Arrow lr[] = {Arrow::Left, Arrow::Right};
         static const Arrow ud[] = {Arrow::Up, Arrow::Down};
-        int y = 21;
+        int y = 20;
         helpArrows(6, y, all, 4);
         helpLine(y, nullptr, "pick a control");
-        y += 15;
+        y += 14;
         helpLine(y, "Enter", "open it");
-        y += 15;
+        y += 14;
         helpArrows(6, y, lr, 2);
         helpLine(y, nullptr, "open: change");
-        y += 15;
+        y += 14;
         helpArrows(6, y, ud, 2);
         helpLine(y, nullptr, "open: big step");
-        y += 15;
+        y += 14;
         helpLine(y, "Enter", "open: AF / auto WB / feed");
-        y += 15;
+        y += 14;
         helpLine(y, "Space", "AUTOFOCUS  (or G0)", INFO);
-        y += 15;
+        y += 14;
         helpLine(y, "Del", "back to all controls");
         s_c->setFont(F2);
         s_c->setTextDatum(textdatum_t::top_center);
         s_c->setTextColor(TEXT_2);
-        s_c->drawString("other keys close this", W / 2, 120);
+        s_c->drawString("other keys close this", W / 2, 121);
         return;
     }
-    helpHeader("WI-FI", "h: keys page");
+    char right[48];
+    snprintf(right, sizeof(right), "v%s   h: keys", esp_app_get_description()->version);
+    helpHeader("WI-FI", right);
     char line[96];
     helpLine(22, "Wi-Fi", s.ssid, TEXT, 76);
     helpLine(39, "Pass", s.password, TEXT, 76);
     helpLine(56, "Setup", "http://192.168.73.1", INFO, 76);
     snprintf(line, sizeof(line), "%d connected", s.wifiClients);
     helpLine(73, "Phones", line, TEXT, 76);
-    helpLine(90, "f i o w t c", "jump", TEXT, 104);
+    helpLine(90, "f i s o w c t", "jump", TEXT, 112);
     s_c->setFont(F2);
     s_c->setTextDatum(textdatum_t::top_center);
     s_c->setTextColor(TEXT_2);
@@ -1406,45 +1577,35 @@ void bigCap(int x, int y, int w, int h, const char* legend, uint16_t fill) {
 }
 
 void drawIntro(const UiState& s) {
-    s_c->fillRect(0, 0, W, 14, STATUS_BG);
-    s_c->setFont(F0);
-    s_c->setTextDatum(textdatum_t::top_left);
-    s_c->setTextColor(ACCENT);
-    s_c->drawString("WELCOME", 4, 3);
-    s_c->setTextDatum(textdatum_t::top_right);
-    s_c->setTextColor(TEXT_2);
-    s_c->drawString(s.introCard == 0 ? "1 / 2" : "2 / 2", 236, 3);
+    helpHeader("WELCOME", s.introCard == 0 ? "1 / 2" : "2 / 2");
     if (s.introCard == 0) {
         s_c->setFont(B9);
         s_c->setTextDatum(textdatum_t::baseline_center);
         s_c->setTextColor(TEXT);
-        s_c->drawString("ONE-PRESS AUTOFOCUS", W / 2, 34);
+        s_c->drawString("ONE-PRESS AUTOFOCUS", W / 2, 38);
         const OpState af = s.cam.af;
         const uint16_t fill = af == OpState::Running ? INFO : (af == OpState::Done ? OK : PANEL_HI);
-        bigCap(20, 44, 110, 26, af == OpState::Done ? "SPACE  OK" : "SPACE", fill);
+        bigCap(12, 46, 104, 26, af == OpState::Done ? "SPACE  OK" : "SPACE", fill);
         s_c->setFont(F2);
-        s_c->setTextDatum(textdatum_t::top_left);
+        s_c->setTextDatum(textdatum_t::middle_left);
         s_c->setTextColor(TEXT_2);
-        s_c->drawString("or", 140, 50);
-        bigCap(166, 44, 46, 26, "G0", PANEL_HI);
-        s_c->setFont(F0);
+        s_c->drawString("or side", 122, 59);
+        bigCap(178, 46, 46, 26, "G0", PANEL_HI);
         s_c->setTextDatum(textdatum_t::top_center);
-        s_c->setTextColor(TEXT_2);
-        s_c->drawString("side button", 189, 74);
-        s_c->setFont(F2);
-        s_c->drawString("focuses on the picture centre", W / 2, 82);
-        s_c->setFont(F0);
+        s_c->setTextColor(TEXT);
+        s_c->drawString("focuses on the picture centre", W / 2, 80);
         if (blink(s.nowMs, 600)) {
             s_c->setTextColor(ACCENT);
-            s_c->drawString("try it now: press SPACE", W / 2, 100);
+            s_c->drawString("try it now: press SPACE", W / 2, 98);
         }
     } else {
+        // Arrow key cluster on the left, what they do on the right.
         struct Cap {
             int x, y;
             const char* legend;
             Arrow a;
         };
-        const Cap caps[] = {{44, 22, ";", Arrow::Up}, {10, 48, ",", Arrow::Left}, {44, 48, ".", Arrow::Down}, {78, 48, "/", Arrow::Right}};
+        const Cap caps[] = {{40, 24, ";", Arrow::Up}, {6, 50, ",", Arrow::Left}, {40, 50, ".", Arrow::Down}, {74, 50, "/", Arrow::Right}};
         for (const Cap& c : caps) {
             s_c->fillRoundRect(c.x, c.y, 30, 22, 4, PANEL_HI);
             s_c->drawRoundRect(c.x, c.y, 30, 22, 4, LINE);
@@ -1460,45 +1621,35 @@ void drawIntro(const UiState& s) {
             s_c->setTextColor(TEXT_2);
             s_c->drawString(c.legend, c.x + 22, c.y + 12);
         }
-        s_c->setFont(F0);
+        static const Arrow all[] = {Arrow::Up, Arrow::Down, Arrow::Left, Arrow::Right};
+        static const Arrow lr[] = {Arrow::Left, Arrow::Right};
+        static const Arrow ud[] = {Arrow::Up, Arrow::Down};
+        s_c->setFont(F2);
         s_c->setTextDatum(textdatum_t::top_left);
         s_c->setTextColor(TEXT);
-        drawArrow(118, 25, Arrow::Up, ACCENT);
-        drawArrow(125, 25, Arrow::Down, ACCENT);
-        drawArrow(132, 25, Arrow::Left, ACCENT);
-        drawArrow(139, 25, Arrow::Right, ACCENT);
-        s_c->drawString("pick a control", 148, 24);
-        int x = 118 + drawKeycap(118, 37, "ENT", Arrow::None, CapStyle::Normal) + 3;
-        s_c->setFont(F0);
+        helpArrows(112, 22, all, 4);
+        s_c->setFont(F2);
         s_c->setTextDatum(textdatum_t::top_left);
         s_c->setTextColor(TEXT);
-        s_c->drawString("open it", x, 39);
-        drawArrow(118, 54, Arrow::Left, ACCENT);
-        drawArrow(125, 54, Arrow::Right, ACCENT);
-        s_c->drawString("change", 134, 53);
-        drawArrow(176, 54, Arrow::Up, ACCENT);
-        drawArrow(183, 54, Arrow::Down, ACCENT);
-        s_c->drawString("big", 192, 53);
-        x = 118 + drawKeycap(118, 66, "DEL", Arrow::None, CapStyle::Normal) + 3;
-        s_c->setFont(F0);
+        s_c->drawString("pick", 152, 22);
+        s_c->setTextColor(ACCENT);
+        s_c->drawString("Enter", 112, 40);
+        s_c->setTextColor(TEXT);
+        s_c->drawString("open", 152, 40);
+        helpArrows(112, 58, lr, 2);
+        s_c->setFont(F2);
         s_c->setTextDatum(textdatum_t::top_left);
         s_c->setTextColor(TEXT);
-        s_c->drawString("back to all", x, 68);
-        x = 118 + drawKeycap(118, 82, "f", Arrow::None, CapStyle::Normal) + 2;
-        x += drawKeycap(x, 82, "i", Arrow::None, CapStyle::Normal) + 2;
-        x += drawKeycap(x, 82, "o", Arrow::None, CapStyle::Normal) + 3;
-        s_c->setFont(F0);
+        s_c->drawString("change", 152, 58);
+        helpArrows(112, 76, ud, 2);
+        s_c->setFont(F2);
         s_c->setTextDatum(textdatum_t::top_left);
         s_c->setTextColor(TEXT);
-        s_c->drawString("jump to", x, 84);
-        x = 118 + drawKeycap(118, 98, "h", Arrow::None, CapStyle::Normal) + 3;
-        s_c->setFont(F0);
-        s_c->setTextDatum(textdatum_t::top_left);
-        s_c->setTextColor(TEXT);
-        s_c->drawString("all keys, any time", x, 100);
+        s_c->drawString("big step", 152, 76);
+        s_c->setTextDatum(textdatum_t::top_center);
+        s_c->setTextColor(TEXT_2);
+        s_c->drawString("Del: back     h: all keys", W / 2, 97);
     }
-    s_c->fillCircle(116, 114, 2, s.introCard == 0 ? ACCENT : LINE);
-    s_c->fillCircle(124, 114, 2, s.introCard == 1 ? ACCENT : LINE);
     s_c->setFont(F2);
     s_c->setTextDatum(textdatum_t::top_center);
     s_c->setTextColor(TEXT_2);
@@ -1565,6 +1716,7 @@ void trackFeedback(const UiState& s) {
         ext(RemoteRow::Focus, o.focusKnown && fabsf(a.focus - o.focus) > 0.02f && cv.af == OpState::Idle);
         ext(RemoteRow::Iris, o.irisKnown && fabsf(a.irisStop - o.irisStop) > 0.05f);
         ext(RemoteRow::Iso, o.isoKnown && a.iso != o.iso);
+        ext(RemoteRow::Shutter, o.shutterKnown && a.shutterValue() != o.shutterValue());
         ext(RemoteRow::Wb, o.wbKnown && a.wb != o.wb && cv.awb == OpState::Idle);
         ext(RemoteRow::Tint, o.tintKnown && a.tint != o.tint);
         bool feed = false;
@@ -1597,6 +1749,7 @@ void drawScene(const UiState& s, float dt) {
                 case RemoteRow::Focus: drawFocusDetail(s, dt); break;
                 case RemoteRow::Iris: drawIrisDetail(s, dt); break;
                 case RemoteRow::Iso: drawIsoDetail(s, dt); break;
+                case RemoteRow::Shutter: drawShutterDetail(s, dt); break;
                 case RemoteRow::Wb: drawWbDetail(s, dt); break;
                 case RemoteRow::Tint: drawTintDetail(s, dt); break;
                 default: drawFeedDetail(s, dt); break;
@@ -1646,6 +1799,18 @@ bool uiRender(const UiState& s) {
         s_sprite->pushSprite(0, band);
     }
     return active;
+}
+
+void uiCapture(const UiState& s, UiBandSink sink, void* ctx) {
+    if (!s_c) return;
+    for (int band = 0; band < H; band += BAND_H) {
+        A.active = false;
+        s_c->setBand(band);
+        drawScene(s, 0.0f);
+        s_sprite->pushSprite(0, band);
+        const int rows = H - band < BAND_H ? H - band : BAND_H;
+        sink(static_cast<const uint8_t*>(s_sprite->getBuffer()), band, rows, ctx);
+    }
 }
 
 void uiRenderSafeMode(uint32_t secondsLeft, uint32_t totalSeconds, uint32_t resetHeldMs) {

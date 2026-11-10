@@ -22,11 +22,13 @@ public:
     uint32_t poll(uint32_t nowMs) {
         if (!held_) return 0;
         uint32_t n = 0;
-        while ((int32_t)(nowMs - nextMs_) >= 0 && n < 8) {
+        while ((int32_t)(nowMs - nextMs_) >= 0 && n < 2) {
             ++n;
             ++repeats_;
             nextMs_ += intervalMs_;
         }
+        // Still behind (the caller stalled): drop the backlog, no bursts.
+        if ((int32_t)(nowMs - nextMs_) >= 0) nextMs_ = nowMs + intervalMs_;
         return n;
     }
     bool boosted() const { return repeats_ >= boostAfter_; }

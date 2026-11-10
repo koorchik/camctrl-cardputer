@@ -17,6 +17,12 @@ built-in fonts into the single 240 x 135 x 16 bpp sprite that is already allocat
 >   subscribed) sits left of the LIVE dot: percentage, a 15 x 8 battery icon with a level bar
 >   (`OK`, `WARN` ≤ 30 %, `ERR` ≤ 15 %, `INFO` while charging), a bolt while charging; the
 >   source name (`AC`, `USB`) when no battery is present. The camera name is clipped before it.
+> - **Shutter replaces the tint tile.** Grid: FOCUS IRIS SHUTTER | ISO WB CLEAN FEED. Tint has no
+>   tile: `t` opens its detail view, the WB tile shows `tint +N` on its gauge line and the WB
+>   screen shows `[t] TINT +N` above the G–M bar. The shutter tile shows `1/125` or `180°`; its
+>   detail view is a drum of `/video/supportedShutters` (speed or angle list by measurement mode),
+>   green dots for `/video/flickerFreeShutters`, the other unit at the `/system/format` frame rate,
+>   a rotary shutter disc and a ruler. Big step = 3 entries. `s` jumps to it.
 > - **No bottom key strip** (unreadable at 6 px). The status bar is 18 px with Font2 text (REC /
 >   tally chips, name, battery, live dot, phones, an `h` key cap); everything below is drawn 5 px
 >   lower than the coordinates in this document (`CONTENT_SHIFT`). Help (`h`) is the place for

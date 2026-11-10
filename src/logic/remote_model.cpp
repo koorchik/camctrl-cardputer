@@ -19,6 +19,7 @@ RemoteKey remoteKeyFor(const Key& k) {
         case '`': return RemoteKey::Back;  // printed esc
         case 'f': return RemoteKey::JumpFocus;
         case 'i': return RemoteKey::JumpIris;
+        case 's': return RemoteKey::JumpShutter;
         case 'o': return RemoteKey::JumpIso;
         case 'w': return RemoteKey::JumpWb;
         case 't': return RemoteKey::JumpTint;
@@ -52,8 +53,9 @@ RemoteCommand RemoteModel::onKey(RemoteKey key, bool big, CameraValues& v) {
         case RemoteKey::Down:
         case RemoteKey::ColLeft:
         case RemoteKey::ColRight: {
-            int col = (int)row_ / REMOTE_GRID_ROWS;
-            int r = (int)row_ % REMOTE_GRID_ROWS;
+            const int tile = (int)remoteTileRow(row_);
+            int col = tile / REMOTE_GRID_ROWS;
+            int r = tile % REMOTE_GRID_ROWS;
             if (key == RemoteKey::Up) r = r > 0 ? r - 1 : r;
             if (key == RemoteKey::Down) r = r < REMOTE_GRID_ROWS - 1 ? r + 1 : r;
             if (key == RemoteKey::ColLeft) col = 0;
@@ -70,12 +72,15 @@ RemoteCommand RemoteModel::onKey(RemoteKey key, bool big, CameraValues& v) {
             return c;
         }
         case RemoteKey::Help: help_ = true; return none;
-        case RemoteKey::JumpFocus: row_ = RemoteRow::Focus; return none;
-        case RemoteKey::JumpIris: row_ = RemoteRow::Iris; return none;
-        case RemoteKey::JumpIso: row_ = RemoteRow::Iso; return none;
-        case RemoteKey::JumpWb: row_ = RemoteRow::Wb; return none;
-        case RemoteKey::JumpTint: row_ = RemoteRow::Tint; return none;
-        case RemoteKey::JumpFeed: row_ = RemoteRow::Feed; return none;
+        case RemoteKey::JumpFocus:
+        case RemoteKey::JumpIris:
+        case RemoteKey::JumpShutter:
+        case RemoteKey::JumpIso:
+        case RemoteKey::JumpWb:
+        case RemoteKey::JumpFeed:
+        case RemoteKey::JumpTint:
+            row_ = (RemoteRow)((int)key - (int)RemoteKey::JumpFocus);
+            return none;
         default: return none;
     }
 }
@@ -92,6 +97,7 @@ bool RemoteModel::rowKnown(const CameraValues& v) const {
         case RemoteRow::Focus: return v.focusKnown && v.focusControllable;
         case RemoteRow::Iris: return v.irisKnown && v.irisControllable && !v.irisAuto;
         case RemoteRow::Iso: return v.isoKnown && v.isoCount > 0;
+        case RemoteRow::Shutter: return v.shutterKnown && !v.shutterAuto && v.shutterListCount() > 0;
         case RemoteRow::Wb: return v.wbKnown;
         case RemoteRow::Tint: return v.tintKnown;
         default: return false;
@@ -135,6 +141,29 @@ RemoteCommand RemoteModel::changeValue(int dir, bool big, CameraValues& v) {
             v.iso = v.isoList[next];
             c.type = RemoteCmd::SetIso;
             c.i = v.iso;
+            return c;
+        }
+        case RemoteRow::Shutter: {
+            const size_t n = v.shutterListCount();
+            if (!v.shutterKnown || v.shutterAuto || n == 0) return c;
+            const int* list = v.shutterList();
+            const int cur = v.shutterValue();
+            size_t idx = 0;
+            for (size_t k = 1; k < n; ++k) {
+                if (std::abs(list[k] - cur) < std::abs(list[idx] - cur)) idx = k;
+            }
+            // -> = the next bigger number (1/125 -> 1/200, 180 -> 270 degrees).
+            int next = (int)idx + dir * (big ? SHUTTER_BIG_STEP : 1);
+            next = std::max(0, std::min((int)n - 1, next));
+            if (list[next] == cur) return c;
+            if (v.shutterAngleMode) {
+                v.shutterAngle = list[next];
+            } else {
+                v.shutterSpeed = list[next];
+            }
+            c.type = RemoteCmd::SetShutter;
+            c.i = list[next];
+            c.b = v.shutterAngleMode;
             return c;
         }
         case RemoteRow::Wb: {
@@ -238,6 +267,20 @@ void formatTint(const CameraValues& v, char* out, size_t cap) {
         snprintf(out, cap, "--");
     } else {
         snprintf(out, cap, "%+d", v.tint);
+    }
+}
+
+void formatShutter(const CameraValues& v, char* out, size_t cap) {
+    if (!v.shutterKnown) {
+        snprintf(out, cap, "--");
+    } else if (!v.shutterAngleMode) {
+        snprintf(out, cap, "1/%d", v.shutterSpeed);
+    } else if (v.shutterAngle % 100 == 0) {
+        snprintf(out, cap, "%d", v.shutterAngle / 100);
+    } else if (v.shutterAngle % 10 == 0) {
+        snprintf(out, cap, "%d.%d", v.shutterAngle / 100, (v.shutterAngle / 10) % 10);
+    } else {
+        snprintf(out, cap, "%d.%02d", v.shutterAngle / 100, v.shutterAngle % 100);
     }
 }
 

@@ -11,6 +11,7 @@
 #include "dhcp_task.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
+#include "esp_app_desc.h"
 #include "esp_ota_ops.h"
 #include "esp_system.h"
 #include "esp_timer.h"
@@ -114,8 +115,10 @@ void renderPage(Out& o, const Settings& form, const char* message, bool error) {
     o.add("<tr><td>mDNS fallback</td><td>%s</td></tr>", mdnsText(mdnsState()));
     o.add("<tr><td>Frames USB&rarr;Wi&#8209;Fi / Wi&#8209;Fi&rarr;USB</td><td>%lu / %lu</td></tr>",
           (unsigned long)st.usbToWifi, (unsigned long)st.wifiToUsb);
-    o.add("<tr><td>Uptime</td><td>%lu min</td></tr></table>",
+    o.add("<tr><td>Uptime</td><td>%lu min</td></tr>",
           (unsigned long)(esp_timer_get_time() / 60000000));
+    const esp_app_desc_t* app = esp_app_get_description();
+    o.add("<tr><td>Firmware</td><td>%s %s</td></tr></table>", app->project_name, app->version);
 
     o.add("<h2>Network</h2><table>"
           "<tr><td>This adapter</td><td>192.168.73.1</td></tr>"
@@ -264,14 +267,16 @@ esp_err_t handleStatus(httpd_req_t* req) {
              "\"mdns\":\"%s\",\"mdns_name\":\"%s\",\"wifi_clients\":%d,\"ssid\":\"%s\","
              "\"channel\":%u,\"uptime_s\":%llu,\"frames\":{\"usb_to_wifi\":%lu,"
              "\"wifi_to_usb\":%lu,\"to_adapter\":%lu,\"from_adapter\":%lu,\"dropped\":%lu},"
-             "\"free_heap\":%lu,\"min_free_heap\":%lu,\"ota_pending\":%s}",
+             "\"free_heap\":%lu,\"min_free_heap\":%lu,\"ota_pending\":%s,"
+             "\"firmware\":\"%s\",\"version\":\"%s\"}",
              st.usbMounted ? "true" : "false", deviceIpForClients() ? cam : "",
              st.deviceSeenIp ? seen : "", mdns, host, st.wifiClients, ssid,
              (unsigned)s_settings.channel, (unsigned long long)(esp_timer_get_time() / 1000000),
              (unsigned long)st.usbToWifi, (unsigned long)st.wifiToUsb, (unsigned long)st.toLocal,
              (unsigned long)st.fromLocal, (unsigned long)st.drops,
              (unsigned long)esp_get_free_heap_size(),
-             (unsigned long)esp_get_minimum_free_heap_size(), webOtaPending() ? "true" : "false");
+             (unsigned long)esp_get_minimum_free_heap_size(), webOtaPending() ? "true" : "false",
+             esp_app_get_description()->project_name, esp_app_get_description()->version);
     httpd_resp_set_type(req, "application/json");
     return httpd_resp_sendstr(req, json);
 }
@@ -303,6 +308,35 @@ esp_err_t handleReboot(httpd_req_t* req) {
                                                             : "restarting\n");
     delayedRestart(kind);
     return ESP_OK;
+}
+
+// Optional hooks a firmware may define (weak): the screen as raw pixels and
+// simulated key presses, for screenshots and UI automation. Without them the
+// routes answer 404.
+extern "C" esp_err_t webScreenCapture(httpd_req_t* req) __attribute__((weak));
+extern "C" bool webInjectKey(const char* name) __attribute__((weak));
+
+// GET /api/screen: 240 x 135 RGB565, big-endian, row by row.
+esp_err_t handleScreen(httpd_req_t* req) {
+    ++s_requests;
+    if (!hasApiHeader(req) || !sameOrigin(req)) return rejectCrossSite(req);
+    if (!webScreenCapture) return httpd_resp_send_404(req);
+    return webScreenCapture(req);
+}
+
+// POST /api/key?k=<name>: presses and releases one key (names in main.cpp).
+esp_err_t handleKey(httpd_req_t* req) {
+    ++s_requests;
+    if (!hasApiHeader(req) || !sameOrigin(req)) return rejectCrossSite(req);
+    if (!webInjectKey) return httpd_resp_send_404(req);
+    char query[32] = "", key[16] = "";
+    httpd_req_get_url_query_str(req, query, sizeof(query));
+    httpd_query_key_value(query, "k", key, sizeof(key));
+    if (!webInjectKey(key)) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "unknown key");
+        return ESP_FAIL;
+    }
+    return httpd_resp_sendstr(req, "ok\n");
 }
 
 // POST /api/ota with the raw firmware.bin as the body. The new image boots
@@ -367,6 +401,7 @@ void webStart(const Settings& current) {
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
     cfg.stack_size = 6144;
     cfg.lru_purge_enable = true;
+    cfg.max_uri_handlers = 10;
     cfg.max_open_sockets = 4;  // leaves lwIP sockets for DHCP and mDNS
     httpd_handle_t server = nullptr;
     if (httpd_start(&server, &cfg) != ESP_OK) {
@@ -380,6 +415,8 @@ void webStart(const Settings& current) {
         {"/api/log", HTTP_GET, handleLog, nullptr},
         {"/api/reboot", HTTP_POST, handleReboot, nullptr},
         {"/api/ota", HTTP_POST, handleOta, nullptr},
+        {"/api/screen", HTTP_GET, handleScreen, nullptr},
+        {"/api/key", HTTP_POST, handleKey, nullptr},
     };
     for (const httpd_uri_t& r : routes) httpd_register_uri_handler(server, &r);
     ESP_LOGI(TAG, "settings page on http://192.168.73.1/");

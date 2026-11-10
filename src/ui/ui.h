@@ -39,4 +39,10 @@ void uiInit();
 // Draws one frame. Returns true while something is animating (call again
 // soon); false when the frame is static.
 bool uiRender(const UiState& s);
+
+// Draws the current frame (no animation step) and hands each band to `sink`:
+// RGB565 big-endian pixels, `rows` rows of 240 starting at screen row `top`.
+// For screenshots (/api/screen).
+using UiBandSink = void (*)(const uint8_t* pixels, int top, int rows, void* ctx);
+void uiCapture(const UiState& s, UiBandSink sink, void* ctx);
 void uiRenderSafeMode(uint32_t secondsLeft, uint32_t totalSeconds, uint32_t resetHeldMs);

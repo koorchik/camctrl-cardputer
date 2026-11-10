@@ -5,8 +5,9 @@ Guidance for Claude Code (and humans) working in this repository.
 ## What this is
 
 Firmware for the M5Stack Cardputer ADV only: the **EthAir** USB‑NCM ↔ Wi‑Fi bridge plus a handheld
-**camera remote** on the Cardputer's screen and keyboard (focus/autofocus, iris, ISO, white
-balance + auto WB, tint, clean feed per output). Built for Blackmagic cameras, tested with a Micro
+**camera remote** on the Cardputer's screen and keyboard (focus/autofocus, iris, shutter, ISO,
+white balance + auto WB, tint, clean feed per output). Overview grid: Focus Iris Shutter | ISO WB
+Feed; tint has no tile (`RemoteRow::Tint`, key `t`, shown on the WB tile and screen). Built for Blackmagic cameras, tested with a Micro
 Studio Camera 4K G2 (firmware 9.6.2). UI and docs are English.
 
 - Bridge part = EthAir: adapter `192.168.73.1`, camera always `192.168.73.2`, Wi‑Fi `EthAir-XXXX`
@@ -32,6 +33,13 @@ tools/flash.sh [cardputer] [--usb]            # OTA via 192.168.73.1, else USB s
   ROM download: identical to EthAir — read its CLAUDE.md. With the Cardputer in the camera, flash
   through a phone on its Wi‑Fi using adb (`adb push` + `adb shell curl … /api/ota`).
 - Debug: `/api/log` (heap is logged at startup and every 30 s), `/api/status` (`min_free_heap`).
+
+### Releasing
+
+Bump `PROJECT_VER` in `CMakeLists.txt`, run `tools/release.sh` (native tests, every device env,
+`dist/*-full.bin` for USB at 0x0 + `dist/*-ota.bin` + `SHA256SUMS`), commit, tag `vX.Y.Z`, attach
+the `dist/` files to the GitHub release. The version shows on the settings page and in
+`/api/status`. `tools/release.sh` is identical in both firmwares.
 
 ## Architecture
 
@@ -61,7 +69,9 @@ Product/protocol decisions: `docs/superpowers/specs/2026-11-10-camctrl-cardputer
   (it would probe the I2C bus the keyboard driver owns). GPIO38 = backlight *and* RGB‑LED power:
   never drive it low.
 - Keyboard arrows are the printed legends on `;` `.` `,` `/`, used without Fn.
-- Camera quirks: iris reports only after the motor settles (one write in flight, `adjustmentStep`);
+- Camera quirks: no focus event after an autofocus (ours or a phone app's), so focus is polled
+  once a second while the event link is live; shutter is a speed or an angle (hundredths of a
+  degree) depending on `/video/shutter/measurement`; iris reports only after the motor settles (one write in flight, `adjustmentStep`);
   `doAutoFocus`/`whiteBalance/doAuto` are PUT; clean feed is per display
   (`/monitoring/{name}/cleanFeed`, names from `/monitoring/display`); the camera answers its own mDNS
   name over the bridge.
@@ -73,7 +83,7 @@ Product/protocol decisions: `docs/superpowers/specs/2026-11-10-camctrl-cardputer
 Shared (port fixes in both directions, by diffing): `src/bridge.*`, `src/dhcp_task.*`,
 `src/mdns_task.*`, `src/boot_mode.*`, `src/log_buffer.*`, `src/web.*`, `src/settings_store.*`
 (here with extra UI flags), `src/logic/{forwarder,dhcp_server,mdns,settings,web_text,boot_guard,
-frame_info,hold_detector}*`, `partitions.csv`, `tools/flash.sh` and their tests. Remote‑only:
+frame_info,hold_detector}*`, `partitions.csv`, `tools/flash.sh`, `tools/release.sh` and their tests. Remote‑only:
 `src/hw`, `src/camera`, `src/ui`, `src/logic/{keymap,key_repeat,remote_model,ui_nav,camera_*}`,
 `src/main.cpp`, `src/button.*` (short press for AF). Keep the bridge code identical where possible
 so a fix found in one firmware is a straight copy to the other.
@@ -82,5 +92,6 @@ so a fix found in one firmware is a straight copy to the other.
 
 - English commit messages, no `Co-Authored-By`; no usernames/home paths/personal data in code,
   docs or commits.
-- UI text is English; keep hints compact (240×135).
-- Repository is local only so far (no remote).
+- UI text is English and readable: Font2 (16 px) or larger for anything the user must read; no
+  key strip at the bottom (it was unreadable); keys live on the help pages (`h`) and the intro.
+- Remote: `git@github.com:koorchik/camctrl-cardputer.git` (private).

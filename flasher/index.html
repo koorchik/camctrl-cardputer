@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CamCtrl Cardputer</title>
+<meta name="description" content="Install CamCtrl Cardputer, a handheld remote for Blackmagic cameras on the M5Stack Cardputer ADV, from the browser.">
+<script type="module" src="esp-web-tools/install-button.js"></script>
+<style>
+  :root { --bg: #0d0f12; --panel: #161a20; --line: #262c35; --text: #e8ebef; --dim: #9aa4b1; --accent: #ffbf00; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 40px 16px 64px; }
+  h1 { font-size: 34px; margin: 0 0 4px; letter-spacing: -0.5px; }
+  h1 span { color: var(--accent); }
+  .lead { color: var(--dim); margin: 0 0 28px; font-size: 18px; }
+  .hero img { width: 100%; border-radius: 12px; display: block; }
+  .shots { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 12px 0 32px; }
+  .shots img { width: 100%; border-radius: 8px; display: block; }
+  h2 { font-size: 20px; margin: 36px 0 12px; }
+  ol { padding-left: 22px; margin: 0; }
+  li { margin: 8px 0; }
+  kbd { background: var(--panel); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px; padding: 1px 6px; font: 14px ui-monospace, monospace; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; margin: 14px 0; }
+  .card p { margin: 0 0 14px; color: var(--dim); }
+  esp-web-install-button button[slot] { background: var(--accent); color: #111; border: 0; border-radius: 8px; padding: 11px 18px; font: 600 16px system-ui, sans-serif; cursor: pointer; }
+  .warn { color: var(--accent); }
+  .note { color: var(--dim); font-size: 14px; }
+  a { color: #7cc4ff; }
+  code { font: 14px ui-monospace, monospace; background: var(--panel); padding: 1px 5px; border-radius: 4px; }
+  @media (max-width: 560px) { .shots { grid-template-columns: 1fr 1fr; } h1 { font-size: 28px; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>CamCtrl <span>Cardputer</span></h1>
+  <p class="lead">A handheld remote for Blackmagic cameras. Plug the Cardputer ADV into the camera's USB‑C port: one‑press autofocus, focus, iris, ISO, white balance, tint and clean feed on its own screen and keyboard. Phones still reach the camera over its Wi‑Fi at the same time.</p>
+
+  <div class="hero"><img src="images/overview.png" alt="Overview screen: focus, iris, ISO, white balance, tint and clean feed tiles with live camera values"></div>
+  <div class="shots">
+    <img src="images/focus.png" alt="Focus detail with a focus tape">
+    <img src="images/iris.png" alt="Iris detail with aperture blades and f-stop scale">
+    <img src="images/white-balance.png" alt="White balance detail with a Kelvin colour bar">
+  </div>
+
+  <h2>Install from this page</h2>
+  <ol>
+    <li>Use <b>Chrome or Edge</b> on a computer (the browser talks to the board over USB).</li>
+    <li>Connect the <b>Cardputer ADV</b> to the computer with a USB‑C <b>data</b> cable.</li>
+    <li>Start the download mode: power switch off, hold <kbd>G0</kbd>, switch on, release.</li>
+    <li>Click the button, pick the serial port, confirm.</li>
+    <li>When it is done, switch the Cardputer off and on again.</li>
+  </ol>
+
+  <div class="card">
+    <p>For the <b>Cardputer ADV</b> only (it needs the ADV's keyboard controller).</p>
+    <esp-web-install-button manifest="manifest-cardputer.json">
+      <button slot="activate">Install CamCtrl Cardputer</button>
+      <span slot="unsupported" class="warn">This browser cannot flash boards. Use Chrome or Edge on a computer.</span>
+      <span slot="not-allowed" class="warn">Open this page over https to flash.</span>
+    </esp-web-install-button>
+  </div>
+
+  <h2>Then</h2>
+  <ol>
+    <li>Camera network settings: <b>DHCP</b>.</li>
+    <li><span class="warn">Set the Cardputer's own power switch OFF</span> and plug it into the camera's USB‑C port. It runs from the camera.</li>
+    <li>The screen walks through USB → network → camera, then shows two cards with the keys. <kbd>h</kbd> shows all keys at any time.</li>
+  </ol>
+  <p class="note">Tested with a Blackmagic Micro Studio Camera 4K G2. Source, documentation and issues: <a href="https://github.com/koorchik/camctrl-cardputer">github.com/koorchik/camctrl-cardputer</a>. The Wi‑Fi bridge comes from <a href="https://github.com/koorchik/ethair">EthAir</a>.</p>
+</main>
+</body>
+</html>

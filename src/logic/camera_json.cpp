@@ -1,6 +1,8 @@
 #include "logic/camera_json.h"
 
 #include <algorithm>
+#include <cctype>
+#include <cstdlib>
 #include <cstdio>
 #include <cstring>
 
@@ -21,8 +23,21 @@ const char* const kSubscribed[] = {
     "/lens/focus",         "/lens/focus/description", "/lens/iris",
     "/lens/iris/description", "/video/iso",         "/video/whiteBalance",
     "/video/whiteBalanceTint", "/camera/tallyStatus", "/transports/0/record",
-    "/camera/power",
+    "/camera/power", "/video/shutter",
 };
+
+// Reads a sorted, de-duplicated list of positive ints from root[key].
+size_t readIntList(const cJSON* root, const char* key, int* out, size_t cap) {
+    const cJSON* arr = cJSON_GetObjectItemCaseSensitive(root, key);
+    if (!cJSON_IsArray(arr)) return 0;
+    size_t n = 0;
+    const cJSON* item = nullptr;
+    cJSON_ArrayForEach(item, arr) {
+        if (cJSON_IsNumber(item) && item->valueint > 0 && n < cap) out[n++] = item->valueint;
+    }
+    std::sort(out, out + n);
+    return (size_t)(std::unique(out, out + n) - out);
+}
 
 bool getNumber(const cJSON* obj, const char* key, double& out) {
     const cJSON* n = cJSON_GetObjectItemCaseSensitive(obj, key);
@@ -62,10 +77,22 @@ bool cleanFeedDisplay(const char* path, char* name, size_t cap) {
         return false;
     }
     const size_t n = len - pre - suf;
-    if (n == 0 || n >= cap || memchr(path + pre, '/', n)) return false;
-    memcpy(name, path + pre, n);
-    name[n] = '\0';
-    return true;
+    if (n == 0 || memchr(path + pre, '/', n)) return false;
+    // Decode %XX (polled paths are percent-encoded; events are not).
+    const char* p = path + pre;
+    size_t o = 0;
+    for (size_t i = 0; i < n; ++i) {
+        char c = p[i];
+        if (c == '%' && i + 2 < n && isxdigit((unsigned char)p[i + 1]) && isxdigit((unsigned char)p[i + 2])) {
+            const char hex[3] = {p[i + 1], p[i + 2], 0};
+            c = (char)strtol(hex, nullptr, 16);
+            i += 2;
+        }
+        if (o + 1 >= cap) return false;
+        name[o++] = c;
+    }
+    name[o] = '\0';
+    return o > 0;
 }
 
 bool applyDisplays(CameraValues& v, const cJSON* root) {
@@ -147,6 +174,40 @@ bool applyObject(CameraValues& v, const char* path, const cJSON* root) {
         }
         std::sort(v.isoList, v.isoList + n);
         v.isoCount = (size_t)(std::unique(v.isoList, v.isoList + n) - v.isoList);
+        return true;
+    }
+    if (strcmp(path, "/video/shutter") == 0) {
+        if (getNumber(root, "shutterSpeed", d)) {
+            v.shutterSpeed = (int)d;
+            v.shutterAngleMode = false;
+            v.shutterKnown = true;
+        }
+        if (getNumber(root, "shutterAngle", d)) {
+            v.shutterAngle = (int)d;
+            v.shutterAngleMode = true;
+            v.shutterKnown = true;
+        }
+        if (getBool(root, "continuousShutterAutoExposure", b)) v.shutterAuto = b;
+        return true;
+    }
+    if (strcmp(path, "/video/shutter/measurement") == 0) {
+        const cJSON* m = cJSON_GetObjectItemCaseSensitive(root, "measurement");
+        if (cJSON_IsString(m)) v.shutterAngleMode = strcmp(m->valuestring, "ShutterAngle") == 0;
+        return true;
+    }
+    if (strcmp(path, "/video/supportedShutters") == 0) {
+        v.shutterSpeedCount = readIntList(root, "shutterSpeeds", v.shutterSpeeds, CAM_MAX_SHUTTERS);
+        v.shutterAngleCount = readIntList(root, "shutterAngles", v.shutterAngles, CAM_MAX_SHUTTERS);
+        return true;
+    }
+    if (strcmp(path, "/video/flickerFreeShutters") == 0) {
+        v.flickerSpeedCount = readIntList(root, "shutterSpeeds", v.flickerSpeeds, CAM_MAX_FLICKER_FREE);
+        v.flickerAngleCount = readIntList(root, "shutterAngles", v.flickerAngles, CAM_MAX_FLICKER_FREE);
+        return true;
+    }
+    if (strcmp(path, "/system/format") == 0) {
+        const cJSON* fr = cJSON_GetObjectItemCaseSensitive(root, "frameRate");
+        if (cJSON_IsString(fr)) v.frameRate = strtof(fr->valuestring, nullptr);
         return true;
     }
     if (strcmp(path, "/video/whiteBalance") == 0) {
