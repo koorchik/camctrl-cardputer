@@ -8,7 +8,7 @@ keyboard. No phone,
 no cables to a computer, no setup on the camera beyond DHCP. It runs from the camera's port.
 
 <p align="center">
-  <img src="docs/images/overview.png" width="540" alt="Overview: focus, iris, ISO, white balance, tint and clean feed tiles with live camera values, camera battery in the status bar">
+  <img src="docs/images/cardputer-remote.png" width="640" alt="Cardputer with the remote's overview screen: focus, iris, shutter, ISO, white balance and clean feed with live camera values; the keys the remote uses are highlighted in amber">
 </p>
 
 | Focus | Iris | Shutter |
@@ -20,6 +20,14 @@ no cables to a computer, no setup on the camera beyond DHCP. It runs from the ca
 All screenshots are taken from the device with a real camera attached (`tools/screenshots.py`).
 
 ## Full control from your phone: CamCtrl
+
+<a href="https://camctrl.app/"><img src="docs/images/camctrl-app-icon.png" width="72" align="left" alt="CamCtrl app icon"></a>
+
+**[CamCtrl](https://camctrl.app/)**, the full remote app for Blackmagic cameras<br>
+<a href="https://camctrl.app/"><img src="https://img.shields.io/badge/Android-3DDC84?logo=android&logoColor=white" alt="Android"></a>
+<a href="https://camctrl.app/"><img src="https://img.shields.io/badge/iOS-000000?logo=apple&logoColor=white" alt="iOS"></a>
+<a href="https://camctrl.app/"><img src="https://img.shields.io/badge/camctrl.app-ffbf00" alt="camctrl.app"></a>
+<br clear="left">
 
 The Cardputer is also a Wi‑Fi bridge to the camera (it is a full
 **[EthAir](https://github.com/koorchik/ethair)** adapter). Join its Wi‑Fi with a phone or tablet and
