@@ -9,7 +9,7 @@ release (`tools/release.sh` → `dist/`); it is flashed at 0x0.
 | Version | 1.0.0 |
 | Device type | Cardputer-ADV (ADV only: it needs the ADV keyboard controller) |
 | GitHub | https://github.com/koorchik/camctrl-cardputer |
-| Firmware | `camctrl-cardputer-cardputer-v1.0.0-full.bin` |
+| Firmware | `camctrl-cardputer-cardputer-v1.0.1-full.bin` |
 | Cover | `docs/m5burner/cover.png` (800 × 450, `tools/m5burner_cover.py`) |
 
 ## Description

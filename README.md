@@ -67,7 +67,7 @@ Download `camctrl-cardputer-cardputer-vX.Y.Z-full.bin` from the
 into download mode (unplug it, power switch OFF, hold **G0** while plugging the USB cable in), then:
 
 ```bash
-esptool.py --chip esp32s3 write_flash 0x0 camctrl-cardputer-cardputer-v1.0.0-full.bin
+esptool.py --chip esp32s3 write_flash 0x0 camctrl-cardputer-cardputer-v1.0.1-full.bin
 ```
 
 Unplug the cable and plug it in again afterwards.
@@ -135,7 +135,7 @@ Search for **CamCtrl** in M5Burner's Cardputer section (once it is published the
 From a computer or phone on the Cardputer's Wi‑Fi (or USB):
 
 ```bash
-curl -H "X-EthAir: 1" --data-binary @camctrl-cardputer-cardputer-v1.0.0-ota.bin http://192.168.73.1/api/ota
+curl -H "X-EthAir: 1" --data-binary @camctrl-cardputer-cardputer-v1.0.1-ota.bin http://192.168.73.1/api/ota
 ```
 
 The board keeps a new image only after it has run 30 s and served a request; otherwise it rolls
