@@ -158,3 +158,11 @@ protocol) and `docs/superpowers/specs/2026-11-10-remote-ui-design.md` (every scr
 - Cardputer ADV only. Tested with a Blackmagic Micro Studio Camera 4K G2 (camera firmware 9.6.2);
   other Blackmagic cameras with the REST control API should work but are untested.
 - One camera per Cardputer. Up to 4 Wi‑Fi clients at a time.
+
+## License
+
+MIT, see [LICENSE](LICENSE). Third‑party parts keep their own licenses: M5GFX (MIT; its bundled
+fonts carry their own licenses), ESP‑IDF, esp_tinyusb and esp_websocket_client (Apache 2.0), cJSON
+(MIT, test copy in `test/support/`). ESP Web Tools (Apache 2.0) is served by the installer page.
+
+CamCtrl Cardputer is not affiliated with Blackmagic Design or M5Stack.
